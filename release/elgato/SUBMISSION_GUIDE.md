@@ -55,7 +55,9 @@ Erwartet:
    - Banner/Thumbnail: `thumbnail.png`
    - Gallery: `gallery-1.png`, `gallery-2.png`, `gallery-3.png`
 6. Release Notes: Inhalt aus `../github/RELEASE_NOTES.md` einfügen
-7. GitHub-Link in der Beschreibung auf den realen User/Org-Pfad anpassen
+   (die Markdown-Bilder werden im Marketplace-Formular evtl. nicht
+   gerendert — entweder als Plaintext-Version kürzen oder die
+   `<img>`-Tags entfernen und durch reine Feature-Beschreibungen ersetzen)
 
 ### 4. Review absenden
 
