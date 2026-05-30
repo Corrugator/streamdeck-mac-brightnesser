@@ -106,10 +106,10 @@ your Mac.
 SOURCE & SUPPORT
 
 Source code, issues, and discussions:
-https://github.com/Corrugator/MacStreamBrightnesser
+https://github.com/Corrugator/streamdeck-mac-brightnesser
 
 Latest signed bundle download (with SHA-256 verification):
-https://github.com/Corrugator/MacStreamBrightnesser/releases/latest
+https://github.com/Corrugator/streamdeck-mac-brightnesser/releases/latest
 ```
 
 ## Release Notes (for this version)

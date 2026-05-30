@@ -6,14 +6,14 @@
 <p align="center"><em>Stream Deck+ plugin for Mac display brightness</em></p>
 
 <p align="center">
-  <a href="https://github.com/Corrugator/MacStreamBrightnesser/releases/latest"><img src="https://img.shields.io/github/v/release/Corrugator/MacStreamBrightnesser?label=Download&color=ffd54a" alt="Latest release"></a>
-  <a href="https://github.com/Corrugator/MacStreamBrightnesser/releases/latest"><img src="https://img.shields.io/badge/platform-macOS%2012%2B-orange" alt="Platform"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/Corrugator/MacStreamBrightnesser" alt="License"></a>
+  <a href="https://github.com/Corrugator/streamdeck-mac-brightnesser/releases/latest"><img src="https://img.shields.io/github/v/release/Corrugator/streamdeck-mac-brightnesser?label=Download&color=ffd54a" alt="Latest release"></a>
+  <a href="https://github.com/Corrugator/streamdeck-mac-brightnesser/releases/latest"><img src="https://img.shields.io/badge/platform-macOS%2012%2B-orange" alt="Platform"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/Corrugator/streamdeck-mac-brightnesser" alt="License"></a>
 </p>
 
 Adjust the brightness of every Mac-connected display directly from your Stream Deck+ dials. Built on Apple's native DisplayServices — works reliably with Apple Studio Display, Pro Display XDR, and the built-in MacBook display where most third-party tools fail.
 
-> 🚀 **Quickstart:** [Download the plugin](https://github.com/Corrugator/MacStreamBrightnesser/releases/latest) → double-click → done.
+> 🚀 **Quickstart:** [Download the plugin](https://github.com/Corrugator/streamdeck-mac-brightnesser/releases/latest) → double-click → done.
 
 ---
 
@@ -74,7 +74,7 @@ The DisplayServices path uses the same private framework macOS itself uses for t
 
 ## Installation
 
-1. Download `com.corrugator.brightness.streamDeckPlugin` from the [latest release](https://github.com/Corrugator/MacStreamBrightnesser/releases/latest).
+1. Download `com.corrugator.brightness.streamDeckPlugin` from the [latest release](https://github.com/Corrugator/streamdeck-mac-brightnesser/releases/latest).
 2. Double-click the file. The Stream Deck app installs it automatically.
 3. Drag the **Brightness** action onto a Stream Deck+ dial.
 

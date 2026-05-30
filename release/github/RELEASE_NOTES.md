@@ -1,7 +1,7 @@
 # Brightness Control v1.0.0 — Initial release
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/Corrugator/MacStreamBrightnesser/v1.0.0/release/github/assets/thumbnail.png" width="900" alt="Brightness Control overview">
+  <img src="https://raw.githubusercontent.com/Corrugator/streamdeck-mac-brightnesser/v1.0.0/release/github/assets/thumbnail.png" width="900" alt="Brightness Control overview">
 </p>
 
 First public release of **Brightness Control** — a Stream Deck+ plugin that turns the dials into a hardware brightness regulator for every Mac-connected display. Built on Apple's native DisplayServices, so it handles Apple Studio Display and Pro Display XDR cleanly where most third-party tools fail.
@@ -20,19 +20,19 @@ First public release of **Brightness Control** — a Stream Deck+ plugin that tu
 
 ### Live brightness across every dial
 
-<img src="https://raw.githubusercontent.com/Corrugator/MacStreamBrightnesser/v1.0.0/release/github/assets/gallery-1.png" alt="LCD strip showing four displays with brightness controls">
+<img src="https://raw.githubusercontent.com/Corrugator/streamdeck-mac-brightnesser/v1.0.0/release/github/assets/gallery-1.png" alt="LCD strip showing four displays with brightness controls">
 
 Each dial controls one display. Rotate to adjust brightness in 2 % steps, press to cycle through every connected monitor. The LCD shows monitor name, exact percentage, a live bar, and a switch hint such as `Press to switch 2/3`.
 
 ### Always know which screen you're tuning
 
-<img src="https://raw.githubusercontent.com/Corrugator/MacStreamBrightnesser/v1.0.0/release/github/assets/gallery-2.png" alt="Red border flashes on the active monitor">
+<img src="https://raw.githubusercontent.com/Corrugator/streamdeck-mac-brightnesser/v1.0.0/release/github/assets/gallery-2.png" alt="Red border flashes on the active monitor">
 
 Pressing a dial briefly outlines the active monitor in red — a quick glance confirms you're tuning the right screen, especially handy with two identical displays side by side.
 
 ### Make it yours
 
-<img src="https://raw.githubusercontent.com/Corrugator/MacStreamBrightnesser/v1.0.0/release/github/assets/gallery-3.png" alt="Property Inspector with colors and renaming">
+<img src="https://raw.githubusercontent.com/Corrugator/streamdeck-mac-brightnesser/v1.0.0/release/github/assets/gallery-3.png" alt="Property Inspector with colors and renaming">
 
 Pick custom text colors per dial. Rename each display to whatever makes sense ("Right", "Left", "Desk") — names persist across reboots and re-plugs, and the **Identify** button briefly flashes the matching physical monitor while you're editing.
 

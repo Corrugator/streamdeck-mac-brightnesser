@@ -26,12 +26,12 @@ shasum -a 256 release/github/com.corrugator.brightness.streamDeckPlugin
 
 ```bash
 # Repo auf GitHub anlegen (z.B. über gh)
-gh repo create MacStreamBrightnesser --public \
+gh repo create streamdeck-mac-brightnesser --public \
   --description "Stream Deck+ plugin for controlling Mac display brightness" \
   --source=. --remote=origin
 
 # ODER: existierendes Remote setzen
-# git remote add origin git@github.com:<USER>/MacStreamBrightnesser.git
+# git remote add origin git@github.com:<USER>/streamdeck-mac-brightnesser.git
 ```
 
 ## 2. Branch + Code pushen
