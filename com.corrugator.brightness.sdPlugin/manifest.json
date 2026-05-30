@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "Brightness Control",
+  "Version": "1.0.0.0",
+  "Author": "Corrugator",
+  "UUID": "com.corrugator.brightness",
+  "Actions": [
+    {
+      "Name": "Brightness",
+      "UUID": "com.corrugator.brightness.dial",
+      "Icon": "imgs/actions/brightness/icon",
+      "Tooltip": "Control monitor brightness. Press to switch monitors, rotate to adjust brightness.",
+      "Controllers": [
+        "Encoder"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/brightness/icon"
+        }
+      ],
+      "PropertyInspectorPath": "ui/brightness-pi.html",
+      "Encoder": {
+        "layout": "layouts/brightness.json",
+        "TriggerDescription": {
+          "Push": "Switch Monitor",
+          "Rotate": "Adjust Brightness"
+        }
+      }
+    }
+  ],
+  "Category": "Brightness Control",
+  "CategoryIcon": "imgs/plugin/category",
+  "CodePath": "bin/plugin.js",
+  "Description": "Control monitor brightness with Stream Deck+ dials. Press to switch monitors, rotate to adjust.",
+  "Icon": "imgs/plugin/icon",
+  "SDKVersion": 3,
+  "Software": {
+    "MinimumVersion": "6.9"
+  },
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "12.0"
+    }
+  ],
+  "Nodejs": {
+    "Version": "20"
+  }
+}

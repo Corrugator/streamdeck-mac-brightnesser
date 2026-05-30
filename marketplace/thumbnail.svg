@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 960" width="1920" height="960">
+  <defs>
+    <linearGradient id="bgGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a1f"/>
+      <stop offset="50%" stop-color="#101015"/>
+      <stop offset="100%" stop-color="#06060a"/>
+    </linearGradient>
+    <radialGradient id="ambientGlow" cx="0.35" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#ffd54a" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#ffd54a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="iconBgGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a2a2e"/>
+      <stop offset="100%" stop-color="#0f0f12"/>
+    </linearGradient>
+    <linearGradient id="iconScreenGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a1d"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
+    <linearGradient id="iconLidGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8d8dc"/>
+      <stop offset="100%" stop-color="#9c9ca2"/>
+    </linearGradient>
+    <linearGradient id="iconDeckGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8c8ce"/>
+      <stop offset="100%" stop-color="#8c8c92"/>
+    </linearGradient>
+    <linearGradient id="iconDeckFrontGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8c8c92"/>
+      <stop offset="100%" stop-color="#5e5e64"/>
+    </linearGradient>
+    <radialGradient id="sunGradient" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fff8d6"/>
+      <stop offset="55%" stop-color="#ffd54a"/>
+      <stop offset="100%" stop-color="#ffa726"/>
+    </radialGradient>
+    <radialGradient id="sunGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#ffd54a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffd54a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sdBodyGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2d2d32"/>
+      <stop offset="100%" stop-color="#16161a"/>
+    </linearGradient>
+    <linearGradient id="sdKeyGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#181819"/>
+      <stop offset="100%" stop-color="#0c0c0d"/>
+    </linearGradient>
+    <linearGradient id="dialActiveGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3a3f"/>
+      <stop offset="100%" stop-color="#1d1d20"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect x="0" y="0" width="1920" height="960" fill="url(#bgGradient)"/>
+  <rect x="0" y="0" width="1920" height="960" fill="url(#ambientGlow)"/>
+
+  <!-- ============================ -->
+  <!-- LEFT SIDE: Plugin Icon + Text -->
+  <!-- ============================ -->
+
+  <!-- Plugin icon (scaled instance of icon.svg, 360x360 at center x=280) -->
+  <g transform="translate(100 270) scale(0.703125)">
+    <!-- icon background -->
+    <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#iconBgGradient)"/>
+    <!-- MacBook lid -->
+    <rect x="84" y="104" width="344" height="234" rx="16" ry="16" fill="url(#iconLidGradient)"/>
+    <!-- Screen -->
+    <rect x="100" y="120" width="312" height="202" rx="6" ry="6" fill="url(#iconScreenGradient)"/>
+    <!-- Camera notch -->
+    <rect x="246" y="120" width="20" height="7" rx="3" ry="3" fill="#050507"/>
+    <!-- Sun glow -->
+    <circle cx="256" cy="222" r="118" fill="url(#sunGlow)"/>
+    <!-- Sun rays -->
+    <g fill="url(#sunGradient)">
+      <g transform="translate(256 222)">
+        <g transform="rotate(0)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(45)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(90)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(135)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(180)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(225)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(270)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(315)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      </g>
+    </g>
+    <!-- Sun core -->
+    <circle cx="256" cy="222" r="44" fill="url(#sunGradient)"/>
+    <!-- Hinge gap -->
+    <rect x="68" y="340" width="376" height="6" rx="2" ry="2" fill="#0a0a0c" opacity="0.7"/>
+    <!-- Keyboard deck (trapezoid for perspective) -->
+    <path d="M 60 346 L 452 346 L 484 402 L 28 402 Z" fill="url(#iconDeckGradient)"/>
+    <!-- Trackpad -->
+    <rect x="216" y="362" width="80" height="10" rx="3" ry="3" fill="#0a0a0c" opacity="0.18"/>
+    <!-- Front edge -->
+    <path d="M 28 402 L 484 402 L 476 416 L 36 416 Z" fill="url(#iconDeckFrontGradient)"/>
+  </g>
+
+  <!-- Title -->
+  <text x="490" y="410"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+        font-size="78" font-weight="700" fill="#ffffff">Brightness Control</text>
+
+  <!-- Subtitle -->
+  <text x="490" y="475"
+        font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+        font-size="30" font-weight="500" fill="#b8b8c0">Tune every connected display from your dial.</text>
+
+  <!-- Feature bullets -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+     font-size="24" font-weight="500" fill="#9090a0">
+    <text x="490" y="565">• Apple Studio Display, MacBook, Pro Display XDR</text>
+    <text x="490" y="610">• DDC/CI fallback via m1ddc for third-party monitors</text>
+    <text x="490" y="655">• Press to switch monitors, rotate to adjust</text>
+  </g>
+
+  <!-- ================================= -->
+  <!-- RIGHT SIDE: Stream Deck+ Mockup   -->
+  <!-- ================================= -->
+  <g transform="translate(1290 180) scale(0.83)">
+    <!-- SD+ body -->
+    <rect x="0" y="0" width="720" height="700" rx="36" ry="36" fill="url(#sdBodyGradient)" stroke="#2a2a30" stroke-width="2"/>
+
+    <!-- 8 LCD keys (2 rows x 4 cols) -->
+    <g>
+      <rect x="40"  y="40" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="210" y="40" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="380" y="40" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="550" y="40" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="40"  y="210" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="210" y="210" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="380" y="210" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+      <rect x="550" y="210" width="150" height="150" rx="14" ry="14" fill="url(#sdKeyGradient)"/>
+    </g>
+
+    <!-- LCD touch strip -->
+    <rect x="40" y="390" width="660" height="120" rx="10" ry="10" fill="#0a0a0c"/>
+
+    <!-- LCD content: 4 dial labels matching the brightness plugin's layout -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+      <!-- Cell 1: MacBook Display -->
+      <text x="123" y="420" font-size="14" font-weight="600" fill="#ffffff">MacBook Display</text>
+      <text x="123" y="442" font-size="17" font-weight="700" fill="#ffffffcc">72%</text>
+      <rect x="55" y="456" width="136" height="10" rx="2" ry="2" fill="#222226"/>
+      <rect x="55" y="456" width="98"  height="10" rx="2" ry="2" fill="#ffd54a"/>
+      <text x="123" y="488" font-size="13" font-weight="600" fill="#ffffff">Press to switch 1/3</text>
+
+      <!-- Cell 2: Studio Display (highlighted active) -->
+      <text x="288" y="420" font-size="14" font-weight="600" fill="#ffd54a">Studio Display</text>
+      <text x="288" y="442" font-size="17" font-weight="700" fill="#ffffff">88%</text>
+      <rect x="220" y="456" width="136" height="10" rx="2" ry="2" fill="#222226"/>
+      <rect x="220" y="456" width="120" height="10" rx="2" ry="2" fill="#ffd54a"/>
+      <text x="288" y="488" font-size="13" font-weight="600" fill="#ffffff">Press to switch 2/3</text>
+
+      <!-- Cell 3: Studio Display 2 -->
+      <text x="453" y="420" font-size="14" font-weight="600" fill="#ffffff">Studio Display 2</text>
+      <text x="453" y="442" font-size="17" font-weight="700" fill="#ffffffcc">55%</text>
+      <rect x="385" y="456" width="136" height="10" rx="2" ry="2" fill="#222226"/>
+      <rect x="385" y="456" width="75"  height="10" rx="2" ry="2" fill="#ffd54a"/>
+      <text x="453" y="488" font-size="13" font-weight="600" fill="#ffffff">Press to switch 3/3</text>
+
+      <!-- Cell 4: empty slot greyed (other action could live here) -->
+      <text x="618" y="420" font-size="14" font-weight="600" fill="#555560">—</text>
+      <text x="618" y="488" font-size="13" font-weight="600" fill="#555560">unassigned</text>
+    </g>
+
+    <!-- 4 dials -->
+    <g>
+      <!-- dial 1 -->
+      <circle cx="123" cy="600" r="62" fill="url(#sdBodyGradient)" stroke="#2a2a30" stroke-width="2"/>
+      <circle cx="123" cy="600" r="46" fill="url(#sdKeyGradient)"/>
+      <!-- dial 2 (active / highlight) -->
+      <circle cx="288" cy="600" r="62" fill="url(#dialActiveGradient)" stroke="#ffd54a" stroke-width="3"/>
+      <circle cx="288" cy="600" r="46" fill="url(#sdKeyGradient)"/>
+      <!-- dial pointer -->
+      <line x1="288" y1="600" x2="288" y2="570" stroke="#ffd54a" stroke-width="3" stroke-linecap="round"/>
+      <!-- dial 3 -->
+      <circle cx="453" cy="600" r="62" fill="url(#sdBodyGradient)" stroke="#2a2a30" stroke-width="2"/>
+      <circle cx="453" cy="600" r="46" fill="url(#sdKeyGradient)"/>
+      <!-- dial 4 -->
+      <circle cx="618" cy="600" r="62" fill="url(#sdBodyGradient)" stroke="#2a2a30" stroke-width="2"/>
+      <circle cx="618" cy="600" r="46" fill="url(#sdKeyGradient)"/>
+    </g>
+
+    <!-- Subtle device shadow -->
+    <rect x="0" y="0" width="720" height="700" rx="36" ry="36" fill="none" stroke="#000000" stroke-width="1" opacity="0.4"/>
+  </g>
+</svg>

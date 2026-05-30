@@ -1,0 +1,50 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/layout.json",
+  "id": "brightness-layout",
+  "items": [
+    {
+      "key": "monitorName",
+      "type": "text",
+      "rect": [8, 6, 184, 22],
+      "font": {
+        "size": 14,
+        "weight": 600
+      },
+      "alignment": "center",
+      "color": "#FFFFFF"
+    },
+    {
+      "key": "brightnessValue",
+      "type": "text",
+      "rect": [8, 28, 184, 20],
+      "font": {
+        "size": 16,
+        "weight": 700
+      },
+      "alignment": "center",
+      "color": "#FFFFFFCC"
+    },
+    {
+      "key": "indicator",
+      "type": "bar",
+      "rect": [16, 56, 168, 14],
+      "value": 0,
+      "range": {
+        "min": 0,
+        "max": 100
+      },
+      "border_w": 0
+    },
+    {
+      "key": "switchHint",
+      "type": "text",
+      "rect": [8, 74, 184, 22],
+      "font": {
+        "size": 13,
+        "weight": 600
+      },
+      "alignment": "center",
+      "color": "#FFFFFF"
+    }
+  ]
+}

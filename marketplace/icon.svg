@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a2a2e"/>
+      <stop offset="100%" stop-color="#0f0f12"/>
+    </linearGradient>
+    <linearGradient id="lidGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8d8dc"/>
+      <stop offset="100%" stop-color="#9c9ca2"/>
+    </linearGradient>
+    <linearGradient id="deckGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8c8ce"/>
+      <stop offset="100%" stop-color="#8c8c92"/>
+    </linearGradient>
+    <linearGradient id="deckFrontGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8c8c92"/>
+      <stop offset="100%" stop-color="#5e5e64"/>
+    </linearGradient>
+    <linearGradient id="screenGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a1d"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
+    <radialGradient id="sunGradient" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fff8d6"/>
+      <stop offset="55%" stop-color="#ffd54a"/>
+      <stop offset="100%" stop-color="#ffa726"/>
+    </radialGradient>
+    <radialGradient id="sunGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#ffd54a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffd54a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background: rounded square -->
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#bgGradient)"/>
+
+  <!-- MacBook lid (display housing) -->
+  <rect x="84" y="104" width="344" height="234" rx="16" ry="16" fill="url(#lidGradient)"/>
+
+  <!-- Screen (recessed bezel) -->
+  <rect x="100" y="120" width="312" height="202" rx="6" ry="6" fill="url(#screenGradient)"/>
+
+  <!-- Camera notch -->
+  <rect x="246" y="120" width="20" height="7" rx="3" ry="3" fill="#050507"/>
+
+  <!-- Sun glow on screen -->
+  <circle cx="256" cy="222" r="118" fill="url(#sunGlow)"/>
+
+  <!-- Sun rays -->
+  <g fill="url(#sunGradient)">
+    <g transform="translate(256 222)">
+      <g transform="rotate(0)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(45)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(90)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(135)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(180)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(225)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(270)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      <g transform="rotate(315)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+    </g>
+  </g>
+
+  <!-- Sun core -->
+  <circle cx="256" cy="222" r="44" fill="url(#sunGradient)"/>
+
+  <!-- Hinge gap (dark shadow between lid and deck) -->
+  <rect x="68" y="340" width="376" height="6" rx="2" ry="2" fill="#0a0a0c" opacity="0.7"/>
+
+  <!-- Keyboard deck (trapezoid for subtle 3/4 perspective) -->
+  <path d="M 60 346 L 452 346 L 484 402 L 28 402 Z" fill="url(#deckGradient)"/>
+
+  <!-- Trackpad indication -->
+  <rect x="216" y="362" width="80" height="10" rx="3" ry="3" fill="#0a0a0c" opacity="0.18"/>
+
+  <!-- Front edge / bottom rim of laptop -->
+  <path d="M 28 402 L 484 402 L 476 416 L 36 416 Z" fill="url(#deckFrontGradient)"/>
+</svg>

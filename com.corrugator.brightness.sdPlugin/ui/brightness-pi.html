@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Brightness Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 12px;
+      color: #ccc;
+      background: #2d2d2d;
+      margin: 0;
+      padding: 12px;
+    }
+    .sdpi-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .sdpi-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sdpi-item-label {
+      flex: 0 0 auto;
+      margin-right: 12px;
+      color: #969696;
+      font-size: 11px;
+    }
+    .sdpi-item-value {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    input[type="color"] {
+      width: 40px;
+      height: 28px;
+      border: 1px solid #555;
+      border-radius: 4px;
+      background: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .section-title {
+      font-size: 11px;
+      color: #969696;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+      margin-top: 4px;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .toggle-row label {
+      flex: 1;
+      cursor: pointer;
+      user-select: none;
+    }
+    .help {
+      color: #8a8a8a;
+      font-size: 10.5px;
+      line-height: 1.4;
+      margin-top: 2px;
+    }
+    .display-row {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 7px 0;
+      border-bottom: 1px solid #3a3a3a;
+    }
+    .display-row:last-child {
+      border-bottom: none;
+    }
+    .display-row-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+    }
+    .display-default {
+      color: #8a8a8a;
+      font-size: 10.5px;
+      flex: 1;
+      min-width: 0;
+    }
+    .display-default .method {
+      color: #666;
+      font-style: italic;
+      margin-left: 4px;
+    }
+    .identify-btn {
+      background: transparent;
+      border: 1px solid #555;
+      color: #ccc;
+      border-radius: 4px;
+      padding: 3px 9px;
+      font-size: 10.5px;
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s, background 0.1s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .identify-btn:hover:not(:disabled) {
+      border-color: #ffd54a;
+      color: #ffd54a;
+    }
+    .identify-btn:active:not(:disabled) {
+      background: #1a1a1a;
+    }
+    .identify-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .display-row input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      background: #1f1f1f;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .display-row input[type="text"]:focus {
+      outline: none;
+      border-color: #ffd54a;
+    }
+    .empty-state {
+      color: #8a8a8a;
+      font-size: 11px;
+      font-style: italic;
+      padding: 8px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="sdpi-wrapper">
+    <div class="section-title">Colors</div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Monitor Name</div>
+      <div class="sdpi-item-value">
+        <input type="color" id="nameColor" value="#FFFFFF" />
+      </div>
+    </div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Brightness Value</div>
+      <div class="sdpi-item-value">
+        <input type="color" id="valueColor" value="#FFFFFF" />
+      </div>
+    </div>
+
+    <div class="sdpi-item">
+      <div class="sdpi-item-label">Hint Text</div>
+      <div class="sdpi-item-value">
+        <input type="color" id="hintColor" value="#FFFFFF" />
+      </div>
+    </div>
+
+    <div class="section-title">Display Names</div>
+    <div class="help" style="margin-bottom:4px">
+      Use <b>Identify</b> to briefly flash a monitor in red so you
+      know which one you're looking at, then type a custom name into
+      the field. Leave a field empty to keep the macOS default.
+      Changes apply to all dials immediately.
+    </div>
+    <div id="displayList">
+      <div class="empty-state">Loading displays…</div>
+    </div>
+
+    <div class="section-title">Diagnostics</div>
+
+    <div class="toggle-row">
+      <input type="checkbox" id="diagnosticLogging" />
+      <label for="diagnosticLogging">
+        Enable diagnostic logging
+        <div class="help">
+          Off by default. When enabled, the plugin writes debug info to
+          <code>~/Library/Logs/ElgatoStreamDeck/</code>.
+          Turn on only when troubleshooting; turn off again afterwards.
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <script>
+    let websocket = null;
+    let uuid = null;
+    let actionUUID = null;
+    let settings = {};
+    let globalSettings = {};
+    let knownDisplays = []; // [{key, defaultName, customName, method}]
+
+    const colorFields = ['nameColor', 'valueColor', 'hintColor'];
+
+    function connectElgatoStreamDeckSocket(port, pluginUUID, registerEvent, info, actionInfoStr) {
+      uuid = pluginUUID;
+      const actionInfo = JSON.parse(actionInfoStr);
+      actionUUID = actionInfo.action;
+      settings = actionInfo.payload?.settings || {};
+
+      applyColorsToUI();
+
+      websocket = new WebSocket('ws://127.0.0.1:' + port);
+      websocket.onopen = function () {
+        websocket.send(JSON.stringify({ event: registerEvent, uuid: pluginUUID }));
+        // Pull global settings (logging toggle + display names).
+        websocket.send(JSON.stringify({ event: 'getGlobalSettings', context: pluginUUID }));
+        // Ask the plugin for the list of currently connected displays.
+        requestDisplays();
+      };
+
+      websocket.onmessage = function (evt) {
+        const data = JSON.parse(evt.data);
+        if (data.event === 'didReceiveSettings') {
+          settings = data.payload?.settings || {};
+          applyColorsToUI();
+        } else if (data.event === 'didReceiveGlobalSettings') {
+          globalSettings = data.payload?.settings || {};
+          applyGlobalToUI();
+          renderDisplayList(); // re-render so existing custom names show
+        } else if (data.event === 'sendToPropertyInspector') {
+          const msg = data.payload || {};
+          if (msg.event === 'displays' && Array.isArray(msg.displays)) {
+            knownDisplays = msg.displays;
+            renderDisplayList();
+          }
+        }
+      };
+
+      // Color picker change handlers (per-action settings).
+      for (const id of colorFields) {
+        document.getElementById(id).addEventListener('input', function () {
+          settings[id] = this.value;
+          saveActionSettings();
+        });
+      }
+
+      // Diagnostic logging toggle (global settings).
+      document.getElementById('diagnosticLogging').addEventListener('change', function () {
+        globalSettings.diagnosticLogging = this.checked;
+        saveGlobalSettings();
+      });
+    }
+
+    function applyColorsToUI() {
+      for (const id of colorFields) {
+        if (settings[id]) {
+          document.getElementById(id).value = settings[id];
+        }
+      }
+    }
+
+    function applyGlobalToUI() {
+      document.getElementById('diagnosticLogging').checked = !!globalSettings.diagnosticLogging;
+    }
+
+    function requestDisplays() {
+      if (websocket && websocket.readyState === WebSocket.OPEN && actionUUID) {
+        websocket.send(JSON.stringify({
+          action: actionUUID,
+          event: 'sendToPlugin',
+          context: uuid,
+          payload: { event: 'getDisplays' }
+        }));
+      }
+    }
+
+    function renderDisplayList() {
+      const container = document.getElementById('displayList');
+      if (!knownDisplays || knownDisplays.length === 0) {
+        container.innerHTML = '<div class="empty-state">No displays detected.</div>';
+        return;
+      }
+
+      const persisted = globalSettings.displayNames || {};
+      container.innerHTML = '';
+
+      for (const d of knownDisplays) {
+        const row = document.createElement('div');
+        row.className = 'display-row';
+
+        // Header line: macOS-reported name + transport tag on the left,
+        // explicit "Identify" button on the right.
+        const header = document.createElement('div');
+        header.className = 'display-row-header';
+
+        const defaultLabel = document.createElement('div');
+        defaultLabel.className = 'display-default';
+        const methodLabel = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
+        defaultLabel.innerHTML =
+          escapeHtml(d.defaultName) +
+          '<span class="method">— ' + methodLabel + '</span>';
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'identify-btn';
+        btn.textContent = 'Identify';
+        if (d.canHighlight === false) {
+          btn.disabled = true;
+          btn.title = 'Flash preview unavailable for DDC/CI monitors';
+        } else {
+          btn.title = 'Briefly flash this monitor in red';
+          // The button is the *only* trigger for the overlay panel.
+          // The input field has no flash binding so typing is never
+          // disturbed by the WebKit blur the panel causes.
+          btn.addEventListener('click', (e) => {
+            e.preventDefault();
+            requestHighlight(d.key);
+          });
+        }
+
+        header.appendChild(defaultLabel);
+        header.appendChild(btn);
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = d.defaultName;
+        input.maxLength = 32;
+        // Prefer the live globalSettings value over the snapshot the
+        // plugin sent — the persisted setting is the source of truth.
+        input.value = persisted[d.key] ?? d.customName ?? '';
+
+        input.addEventListener('input', () => {
+          const trimmed = input.value.trim();
+          if (!globalSettings.displayNames) globalSettings.displayNames = {};
+          if (trimmed.length === 0) {
+            delete globalSettings.displayNames[d.key];
+          } else {
+            globalSettings.displayNames[d.key] = trimmed;
+          }
+          saveGlobalSettings();
+        });
+
+        row.appendChild(header);
+        row.appendChild(input);
+        container.appendChild(row);
+      }
+    }
+
+    function requestHighlight(stableKey) {
+      if (websocket && websocket.readyState === WebSocket.OPEN && actionUUID) {
+        websocket.send(JSON.stringify({
+          action: actionUUID,
+          event: 'sendToPlugin',
+          context: uuid,
+          payload: { event: 'highlightDisplay', key: stableKey }
+        }));
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function saveActionSettings() {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+          event: 'setSettings',
+          context: uuid,
+          payload: settings
+        }));
+      }
+    }
+
+    function saveGlobalSettings() {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+          event: 'setGlobalSettings',
+          context: uuid,
+          payload: globalSettings
+        }));
+      }
+    }
+  </script>
+</body>
+</html>

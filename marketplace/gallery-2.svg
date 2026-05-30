@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 960" width="1920" height="960">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a1f"/>
+      <stop offset="100%" stop-color="#06060a"/>
+    </linearGradient>
+    <radialGradient id="ambient" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="#ffd54a" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffd54a" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- MacBook palette (matches icon) -->
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8d8dc"/>
+      <stop offset="100%" stop-color="#9c9ca2"/>
+    </linearGradient>
+    <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c8c8ce"/>
+      <stop offset="100%" stop-color="#8c8c92"/>
+    </linearGradient>
+    <linearGradient id="deckFront" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8c8c92"/>
+      <stop offset="100%" stop-color="#5e5e64"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1a1a1d"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
+
+    <!-- Apple Studio Display palette (similar to MacBook but slightly cooler) -->
+    <linearGradient id="sdBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d4d4d8"/>
+      <stop offset="100%" stop-color="#90909a"/>
+    </linearGradient>
+    <linearGradient id="sdNeck" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#b8b8c0"/>
+      <stop offset="100%" stop-color="#7a7a82"/>
+    </linearGradient>
+    <linearGradient id="sdBase" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c4c4ca"/>
+      <stop offset="100%" stop-color="#7c7c84"/>
+    </linearGradient>
+
+    <!-- DDC/3rd-party monitor palette (darker, matte plastic) -->
+    <linearGradient id="ddcBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3a40"/>
+      <stop offset="100%" stop-color="#1e1e22"/>
+    </linearGradient>
+    <linearGradient id="ddcStand" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2e2e32"/>
+      <stop offset="100%" stop-color="#16161a"/>
+    </linearGradient>
+
+    <!-- Red highlight for active monitor -->
+    <radialGradient id="redGlow" cx="0.5" cy="0.5" r="0.7">
+      <stop offset="0%" stop-color="#ff3b30" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ff3b30" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Mini brand icon gradients (re-using names is fine in scoped defs) -->
+    <linearGradient id="iconBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2a2a2e"/>
+      <stop offset="100%" stop-color="#0f0f12"/>
+    </linearGradient>
+    <radialGradient id="sunGradient" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fff8d6"/>
+      <stop offset="55%" stop-color="#ffd54a"/>
+      <stop offset="100%" stop-color="#ffa726"/>
+    </radialGradient>
+    <radialGradient id="sunGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#ffd54a" stop-opacity="0.55"/>
+      <stop offset="100%" stop-color="#ffd54a" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1920" height="960" fill="url(#bg)"/>
+  <rect width="1920" height="960" fill="url(#ambient)"/>
+
+  <!-- Brand mark top-left -->
+  <g transform="translate(70 60) scale(0.16)">
+    <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="url(#iconBg)"/>
+    <rect x="84" y="104" width="344" height="234" rx="16" ry="16" fill="url(#lid)"/>
+    <rect x="100" y="120" width="312" height="202" rx="6" ry="6" fill="url(#screen)"/>
+    <rect x="246" y="120" width="20" height="7" rx="3" ry="3" fill="#050507"/>
+    <circle cx="256" cy="222" r="118" fill="url(#sunGlow)"/>
+    <g fill="url(#sunGradient)">
+      <g transform="translate(256 222)">
+        <g transform="rotate(0)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(45)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(90)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(135)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(180)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(225)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(270)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+        <g transform="rotate(315)"><rect x="-7" y="-100" width="14" height="34" rx="7" ry="7"/></g>
+      </g>
+    </g>
+    <circle cx="256" cy="222" r="44" fill="url(#sunGradient)"/>
+    <rect x="68" y="340" width="376" height="6" rx="2" ry="2" fill="#0a0a0c" opacity="0.7"/>
+    <path d="M 60 346 L 452 346 L 484 402 L 28 402 Z" fill="url(#deck)"/>
+    <rect x="216" y="362" width="80" height="10" rx="3" ry="3" fill="#0a0a0c" opacity="0.18"/>
+    <path d="M 28 402 L 484 402 L 476 416 L 36 416 Z" fill="url(#deckFront)"/>
+  </g>
+  <text x="170" y="115" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+        font-size="22" font-weight="700" fill="#ffffff" letter-spacing="0.5">Brightness Control</text>
+  <text x="170" y="140" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif"
+        font-size="14" font-weight="500" fill="#8e8e98" letter-spacing="0.5">for Stream Deck+</text>
+
+  <!-- Headline -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+    <text x="960" y="240" font-size="62" font-weight="700" fill="#ffffff">Always know which screen you're adjusting</text>
+    <text x="960" y="295" font-size="26" font-weight="500" fill="#9090a0">Pressing the dial briefly outlines the active monitor in red.</text>
+  </g>
+
+  <!-- ============================ -->
+  <!-- LEFT: MacBook (built-in)     -->
+  <!-- ============================ -->
+  <g transform="translate(180 410)">
+    <!-- Lid -->
+    <rect x="0" y="0" width="320" height="216" rx="14" ry="14" fill="url(#lid)"/>
+    <!-- Screen -->
+    <rect x="14" y="14" width="292" height="188" rx="6" ry="6" fill="url(#screen)"/>
+    <!-- Camera notch -->
+    <rect x="148" y="14" width="24" height="6" rx="3" ry="3" fill="#050507"/>
+    <!-- Hinge gap -->
+    <rect x="-8" y="216" width="336" height="5" rx="2" ry="2" fill="#0a0a0c" opacity="0.7"/>
+    <!-- Deck (trapezoid) -->
+    <path d="M -16 221 L 336 221 L 360 268 L -40 268 Z" fill="url(#deck)"/>
+    <!-- Trackpad -->
+    <rect x="120" y="232" width="80" height="9" rx="3" ry="3" fill="#0a0a0c" opacity="0.18"/>
+    <!-- Front edge -->
+    <path d="M -40 268 L 360 268 L 354 282 L -34 282 Z" fill="url(#deckFront)"/>
+
+    <!-- Label -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+      <text x="160" y="340" font-size="26" font-weight="600" fill="#ffffff">MacBook Display</text>
+      <text x="160" y="370" font-size="18" font-weight="500" fill="#8e8e98">built-in · DisplayServices</text>
+    </g>
+  </g>
+
+  <!-- ============================ -->
+  <!-- CENTER: Studio Display (ACTIVE / HIGHLIGHTED) -->
+  <!-- ============================ -->
+  <g transform="translate(750 380)">
+    <!-- Red glow halo -->
+    <rect x="-60" y="-60" width="540" height="420" fill="url(#redGlow)"/>
+
+    <!-- Body (thin uniform bezel) -->
+    <rect x="0" y="0" width="420" height="262" rx="18" ry="18" fill="url(#sdBody)"/>
+    <!-- Screen -->
+    <rect x="10" y="10" width="400" height="242" rx="10" ry="10" fill="url(#screen)"/>
+    <!-- Subtle Apple-style camera dot -->
+    <circle cx="210" cy="20" r="3" fill="#0a0a0c"/>
+    <!-- Red highlight outline -->
+    <rect x="-3" y="-3" width="426" height="268" rx="20" ry="20"
+          fill="none" stroke="#ff3b30" stroke-width="5"/>
+
+    <!-- Neck (thin vertical bar, Studio-Display-style) -->
+    <rect x="200" y="262" width="20" height="44" fill="url(#sdNeck)"/>
+    <!-- Base (pill, simple flat) -->
+    <rect x="130" y="306" width="160" height="14" rx="7" ry="7" fill="url(#sdBase)"/>
+
+    <!-- Label -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+      <text x="210" y="360" font-size="28" font-weight="700" fill="#ff5c52">Studio Display</text>
+      <text x="210" y="392" font-size="18" font-weight="500" fill="#c89898">selected · DisplayServices</text>
+    </g>
+  </g>
+
+  <!-- ============================ -->
+  <!-- RIGHT: 3rd-party DDC monitor -->
+  <!-- ============================ -->
+  <g transform="translate(1410 410)">
+    <!-- Body (thicker bezel, matte plastic look) -->
+    <rect x="0" y="0" width="360" height="220" rx="8" ry="8" fill="url(#ddcBody)"/>
+    <!-- Screen (16:9-ish, thicker chin) -->
+    <rect x="14" y="14" width="332" height="178" rx="3" ry="3" fill="url(#screen)"/>
+    <!-- Power LED -->
+    <circle cx="335" cy="208" r="2" fill="#3a8a3a" opacity="0.7"/>
+    <!-- Vendor wordmark placeholder -->
+    <rect x="166" y="204" width="28" height="6" rx="2" ry="2" fill="#5a5a62"/>
+
+    <!-- V-shaped neck -->
+    <path d="M 158 220 L 202 220 L 224 268 L 136 268 Z" fill="url(#ddcStand)"/>
+    <!-- Heavy base bar -->
+    <rect x="95" y="268" width="170" height="14" rx="3" ry="3" fill="url(#ddcStand)"/>
+
+    <!-- Label -->
+    <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+      <text x="180" y="340" font-size="26" font-weight="600" fill="#ffffff">LG UltraFine</text>
+      <text x="180" y="370" font-size="18" font-weight="500" fill="#8e8e98">third-party · DDC/CI</text>
+    </g>
+  </g>
+
+  <!-- Caption -->
+  <g font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" text-anchor="middle">
+    <text x="960" y="870" font-size="24" font-weight="500" fill="#7e7e88">Press the dial → red border flashes briefly on the active display. A glance confirms the right screen, every time.</text>
+  </g>
+</svg>
