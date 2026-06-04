@@ -22,7 +22,7 @@ release/
 ## Source of truth
 
 - Plugin bundle: identical SHA-256 in `elgato/` and `github/`
-  (`67024894c2df56f1e8ec96a43a3ac1c028b36dbd18c2b3011ec3334ede5950d0`)
+  (`487f2c0b4d41b2df2dc8993dae559f61cfa36c5afa4dadeec68411619d6f2798`)
 - Built from commit `523922e` (or later, as long as `npm run pack`
   produces the same hash).
 

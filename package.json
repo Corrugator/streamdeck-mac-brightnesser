@@ -1,6 +1,6 @@
 {
   "name": "com.corrugator.brightness",
-  "version": "1.0.1",
+  "version": "1.0.0",
   "description": "Stream Deck+ plugin for controlling monitor brightness",
   "type": "module",
   "scripts": {
