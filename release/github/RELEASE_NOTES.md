@@ -84,7 +84,7 @@ The DisplayServices path uses the same private framework macOS itself uses for t
 
 ```bash
 shasum -a 256 com.corrugator.brightness.streamDeckPlugin
-# 487f2c0b4d41b2df2dc8993dae559f61cfa36c5afa4dadeec68411619d6f2798
+# 0b635c824b2a1ab6eeed686264a9001c459fccd05e6fdd5f34e1f4ef3e023f87
 ```
 
 ---

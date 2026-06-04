@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Monochrome white-on-transparent icon for Stream Deck app
+  Used for: category icon, action icon
+  Spec: Elgato guidelines — #FFFFFF stroke, transparent background, monochromatic
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144">
+
+  <!-- ============================================ -->
+  <!-- MacBook silhouette                            -->
+  <!-- ============================================ -->
+
+  <!-- Lid (screen housing) — rounded rect, white outline -->
+  <rect x="22" y="30" width="100" height="66" rx="6" ry="6"
+        fill="none" stroke="white" stroke-width="4"/>
+
+  <!-- Hinge gap (thin horizontal line below lid) -->
+  <line x1="20" y1="102" x2="124" y2="102"
+        stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+
+  <!-- Keyboard base (trapezoid for laptop perspective) -->
+  <path d="M 14 107 L 130 107 L 138 117 L 6 117 Z"
+        fill="none" stroke="white" stroke-width="4" stroke-linejoin="round"/>
+
+  <!-- ============================================ -->
+  <!-- Sun inside the screen                        -->
+  <!-- ============================================ -->
+
+  <!-- Sun core (filled circle) -->
+  <circle cx="72" cy="62" r="11" fill="white"/>
+
+  <!-- 8 sun rays around the core -->
+  <g stroke="white" stroke-width="3.5" stroke-linecap="round">
+    <!-- top -->
+    <line x1="72" y1="42" x2="72" y2="48"/>
+    <!-- top-right diagonal -->
+    <line x1="83" y1="51" x2="87" y2="47"/>
+    <!-- right -->
+    <line x1="86" y1="62" x2="92" y2="62"/>
+    <!-- bottom-right diagonal -->
+    <line x1="83" y1="73" x2="87" y2="77"/>
+    <!-- bottom -->
+    <line x1="72" y1="76" x2="72" y2="82"/>
+    <!-- bottom-left diagonal -->
+    <line x1="61" y1="73" x2="57" y2="77"/>
+    <!-- left -->
+    <line x1="58" y1="62" x2="52" y2="62"/>
+    <!-- top-left diagonal -->
+    <line x1="61" y1="51" x2="57" y2="47"/>
+  </g>
+</svg>

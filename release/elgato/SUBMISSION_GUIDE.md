@@ -17,7 +17,7 @@ Step-by-step Anleitung für die Einreichung von Brightness Control v1.0.0.
 ```bash
 shasum -a 256 release/elgato/com.corrugator.brightness.streamDeckPlugin
 # Erwartet:
-# 487f2c0b4d41b2df2dc8993dae559f61cfa36c5afa4dadeec68411619d6f2798
+# 0b635c824b2a1ab6eeed686264a9001c459fccd05e6fdd5f34e1f4ef3e023f87
 ```
 
 Falls der Hash abweicht: `npm run pack` neu laufen lassen,
