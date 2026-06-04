@@ -91,7 +91,7 @@ https://github.com/Corrugator/streamdeck-mac-brightnesser
 | **Supported Devices** | Stream Deck+ |
 | **Supported Platform** | macOS 12.0 and newer |
 | **Min Stream Deck App Version** | 6.9 |
-| **Plugin Version** | 1.0.0 |
+| **Plugin Version** | 1.0.1 |
 | **Source-Code-URL** | `https://github.com/Corrugator/streamdeck-mac-brightnesser` |
 
 ---
@@ -99,7 +99,7 @@ https://github.com/Corrugator/streamdeck-mac-brightnesser
 ## 4. SHA-256 (falls Elgato beim Manifest-Check fragt)
 
 ```
-d407ffc7980237ac6d9a26886d20889fe7049b6245f312d33b4ae45342d4e649
+67024894c2df56f1e8ec96a43a3ac1c028b36dbd18c2b3011ec3334ede5950d0
 ```
 
 Verifizierung: `shasum -a 256 com.corrugator.brightness.streamDeckPlugin`

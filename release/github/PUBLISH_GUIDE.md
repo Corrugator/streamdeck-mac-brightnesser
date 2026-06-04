@@ -17,7 +17,7 @@ git log --oneline -1
 # Bundle-Hash gegen Release-Asset prüfen
 shasum -a 256 release/github/com.corrugator.brightness.streamDeckPlugin
 # Erwartet:
-# d407ffc7980237ac6d9a26886d20889fe7049b6245f312d33b4ae45342d4e649
+# 67024894c2df56f1e8ec96a43a3ac1c028b36dbd18c2b3011ec3334ede5950d0
 ```
 
 ## 1. Remote setzen (falls noch nicht geschehen)
