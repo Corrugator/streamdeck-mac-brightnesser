@@ -6,13 +6,18 @@ Mac-connected display. Built on Apple's native DisplayServices, so it
 handles Apple Studio Display and Pro Display XDR cleanly where most
 third-party tools fail.
 
-> The in-app category and action icons are monochrome white per
-> Elgato's Marketplace plugin guidelines; the Marketplace tile icon
-> (colorful MacBook-with-sun) is kept as-is.
+> 🛒 **Also available on the Elgato Marketplace:**
+> https://marketplace.elgato.com/product/brightness-control-54d6a22a-2fe4-47a3-a0a1-9204efc5232b
+> — easiest install path. Open the link in the Stream Deck app and
+> click install.
 
 ---
 
 ## Install
+
+**From Elgato Marketplace (recommended):** [open the listing](https://marketplace.elgato.com/product/brightness-control-54d6a22a-2fe4-47a3-a0a1-9204efc5232b) in the Stream Deck app and click install.
+
+**Manual install (from this release):**
 
 1. Download **`com.corrugator.brightness.streamDeckPlugin`** from the
    assets below.
