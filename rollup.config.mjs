@@ -7,7 +7,7 @@ const isProd = process.env.NODE_ENV === 'production';
 export default {
   input: 'src/plugin.ts',
   output: {
-    file: 'com.corrugator.brightness.test.sdPlugin/bin/plugin.js',
+    file: 'com.corrugator.brightness.sdPlugin/bin/plugin.js',
     format: 'esm',
     sourcemap: !isProd,
   },

@@ -153,7 +153,7 @@ function updateAllFeedback(instance: BrightnessDial): void {
   }
 }
 
-@action({ UUID: 'com.corrugator.brightness.test.dial' })
+@action({ UUID: 'com.corrugator.brightness.dial' })
 export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   constructor() {
     super();

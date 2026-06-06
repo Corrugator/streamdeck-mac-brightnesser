@@ -8,7 +8,7 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "./com.corrugator.brightness.test.sdPlugin/bin",
+    "outDir": "./com.corrugator.brightness.sdPlugin/bin",
     "rootDir": "./src",
     "types": ["node"]
   },

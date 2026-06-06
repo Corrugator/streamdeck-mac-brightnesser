@@ -8506,7 +8506,7 @@ function updateAllFeedback(instance) {
     }
 }
 let BrightnessDial = (() => {
-    let _classDecorators = [action({ UUID: 'com.corrugator.brightness.test.dial' })];
+    let _classDecorators = [action({ UUID: 'com.corrugator.brightness.dial' })];
     let _classDescriptor;
     let _classExtraInitializers = [];
     let _classThis;
