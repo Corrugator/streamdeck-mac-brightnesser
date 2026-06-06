@@ -161,71 +161,19 @@
       outline: none;
       border-color: #ffd54a;
     }
-    .mode-row {
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 4px 0;
-    }
-    .mode-row label {
-      flex: 1;
-      cursor: pointer;
-      user-select: none;
-      line-height: 1.4;
-    }
-    .mode-row .mode-label-title {
-      color: #eee;
-      font-weight: 500;
-    }
-    .mode-row .mode-label-desc {
-      color: #8a8a8a;
-      font-size: 10.5px;
-      display: block;
-      margin-top: 1px;
-    }
-    .mode-row input[type="radio"] {
-      margin-top: 3px;
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
   <div class="sdpi-wrapper">
-    <div class="section-title">Current Display</div>
+    <div class="section-title">This Dial Controls</div>
     <div class="help" style="margin-bottom:4px">
-      Pick which monitor this dial controls. Rotate to adjust its
-      brightness. Each dial tracks its own display — independent of
-      the others.
+      Pick a specific monitor (press flashes it to identify) or
+      <b>Cycle</b> through all monitors (press moves to the next).
+      Each dial is independent — they don't share state.
     </div>
     <select class="display-picker" id="displayPicker">
-      <option value="">— Select a display —</option>
+      <option value="" disabled selected>— Select an option —</option>
     </select>
-
-    <div class="section-title">Press Behavior</div>
-
-    <div class="mode-row">
-      <input type="radio" name="mode" id="modeLocked" value="locked" />
-      <label for="modeLocked">
-        <span class="mode-label-title">Locked</span>
-        <span class="mode-label-desc">
-          Pressing the dial only flashes the current monitor in red
-          (identify). Safe against accidental presses — the dial
-          stays on the selected display.
-        </span>
-      </label>
-    </div>
-
-    <div class="mode-row">
-      <input type="radio" name="mode" id="modeCycle" value="cycle" />
-      <label for="modeCycle">
-        <span class="mode-label-title">Cycle</span>
-        <span class="mode-label-desc">
-          Pressing the dial moves it to the next monitor in the list
-          (only this dial, not the others). The choice is remembered
-          across restarts.
-        </span>
-      </label>
-    </div>
 
     <div class="section-title">Colors</div>
 
@@ -308,7 +256,6 @@
         if (data.event === 'didReceiveSettings') {
           settings = data.payload?.settings || {};
           applyColorsToUI();
-          applyModeToUI();
           renderDisplayPicker();
         } else if (data.event === 'didReceiveGlobalSettings') {
           globalSettings = data.payload?.settings || {};
@@ -333,28 +280,19 @@
         });
       }
 
-      // Per-action display assignment.
+      // Combined picker: either "cycle" (mode=cycle) or a specific
+      // display key (mode=locked + displayKey).
       document.getElementById('displayPicker').addEventListener('change', function () {
-        if (this.value) {
+        if (this.value === '__cycle__') {
+          settings.mode = 'cycle';
+          // Keep existing displayKey if any so cycling resumes from
+          // the same monitor — onDialDown advances from there.
+        } else if (this.value) {
+          settings.mode = 'locked';
           settings.displayKey = this.value;
-        } else {
-          delete settings.displayKey;
         }
         saveActionSettings();
       });
-
-      // Per-action press behavior (locked vs cycle).
-      for (const id of ['modeLocked', 'modeCycle']) {
-        document.getElementById(id).addEventListener('change', function () {
-          if (this.checked) {
-            settings.mode = this.value;
-            saveActionSettings();
-          }
-        });
-      }
-
-      // Initial mode display
-      applyModeToUI();
 
       // Diagnostic logging toggle (global settings).
       document.getElementById('diagnosticLogging').addEventListener('change', function () {
@@ -365,33 +303,57 @@
 
     function renderDisplayPicker() {
       const picker = document.getElementById('displayPicker');
-      const currentValue = settings.displayKey || '';
       const persistedNames = (globalSettings && globalSettings.displayNames) || {};
 
-      // Rebuild options
+      // Resolve current value: cycle wins; else locked display key;
+      // else nothing selected so the placeholder shows.
+      const mode = settings.mode === 'cycle' ? 'cycle' : 'locked';
+      let currentValue = '';
+      if (mode === 'cycle') {
+        currentValue = '__cycle__';
+      } else if (settings.displayKey) {
+        currentValue = settings.displayKey;
+      }
+
       picker.innerHTML = '';
+
+      // Placeholder (only visible while no real choice is made).
       const placeholder = document.createElement('option');
       placeholder.value = '';
-      placeholder.textContent = '— Select a display —';
+      placeholder.disabled = true;
+      placeholder.textContent = '— Select an option —';
       picker.appendChild(placeholder);
 
-      if (!knownDisplays || knownDisplays.length === 0) {
+      // Cycle option always present so the user can opt into cycling
+      // even before they decide on a starting display.
+      const cycle = document.createElement('option');
+      cycle.value = '__cycle__';
+      cycle.textContent = 'Cycle through all displays';
+      picker.appendChild(cycle);
+
+      if (knownDisplays && knownDisplays.length > 0) {
+        // Visual separator (disabled so it can't be picked).
+        const sep = document.createElement('option');
+        sep.disabled = true;
+        sep.textContent = '────── or pick a specific display ──────';
+        picker.appendChild(sep);
+
+        for (const d of knownDisplays) {
+          const opt = document.createElement('option');
+          opt.value = d.key;
+          const labelName = persistedNames[d.key] || d.defaultName;
+          const method = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
+          opt.textContent = `${labelName}  (${method})`;
+          picker.appendChild(opt);
+        }
+      } else {
         const opt = document.createElement('option');
         opt.value = '';
         opt.disabled = true;
-        opt.textContent = 'No displays detected';
+        opt.textContent = '(No displays detected)';
         picker.appendChild(opt);
-        return;
       }
 
-      for (const d of knownDisplays) {
-        const opt = document.createElement('option');
-        opt.value = d.key;
-        const labelName = persistedNames[d.key] || d.defaultName;
-        const method = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
-        opt.textContent = `${labelName}  (${method})`;
-        picker.appendChild(opt);
-      }
       picker.value = currentValue;
     }
 
@@ -405,13 +367,6 @@
 
     function applyGlobalToUI() {
       document.getElementById('diagnosticLogging').checked = !!globalSettings.diagnosticLogging;
-    }
-
-    function applyModeToUI() {
-      // Default to 'locked' if no mode set yet — matches plugin default.
-      const mode = settings.mode === 'cycle' ? 'cycle' : 'locked';
-      document.getElementById('modeLocked').checked = mode === 'locked';
-      document.getElementById('modeCycle').checked = mode === 'cycle';
     }
 
     function requestDisplays() {
