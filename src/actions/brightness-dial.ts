@@ -17,9 +17,21 @@ import {
   setBrightness,
 } from './display-manager';
 
+/**
+ * Press behavior per dial:
+ * - 'locked' (default): pressing only identifies the assigned display
+ *   with a red flash. Safe against accidental presses; the dial stays
+ *   on the selected display until the user changes it in the PI.
+ * - 'cycle': pressing advances THIS dial to the next display in the
+ *   list (and persists the choice so it survives reload).
+ */
+type Mode = 'locked' | 'cycle';
+
 type BrightnessSettings = {
   /** Stable identity key of the display this dial controls. */
   displayKey?: string;
+  /** Press behavior, see Mode. */
+  mode?: Mode;
   nameColor?: string;
   valueColor?: string;
   hintColor?: string;
@@ -27,6 +39,7 @@ type BrightnessSettings = {
 };
 
 const DEFAULT_COLOR = '#FFFFFF';
+const DEFAULT_MODE: Mode = 'locked';
 const STEP_SIZE = 2;
 const REFRESH_INTERVAL_MS = 10000;
 
@@ -49,6 +62,16 @@ const colorsByAction = new Map<string, Colors>();
 // This is the core of the "one dial = one monitor" model — replaces the
 // shared currentIndex from the cycle-based prototype.
 const displayKeyByAction = new Map<string, string>();
+// Per-action press behavior (locked vs cycle).
+const modeByAction = new Map<string, Mode>();
+
+function modeFor(actionId: string): Mode {
+  return modeByAction.get(actionId) ?? DEFAULT_MODE;
+}
+
+function modeFromSettings(settings: BrightnessSettings): Mode {
+  return settings.mode === 'cycle' ? 'cycle' : 'locked';
+}
 
 function colorsFor(actionId: string): Colors {
   return colorsByAction.get(actionId) ?? DEFAULT_COLORS;
@@ -102,18 +125,23 @@ function updateFeedbackForAction(a: DialAction<BrightnessSettings>): void {
     return;
   }
 
+  const mode = modeFor(a.id);
   const idx = indexOfDisplay(key);
   const positionLabel =
     displays.length > 1 ? `${idx + 1}/${displays.length}` : '';
+  let hint: string;
+  if (mode === 'cycle' && displays.length > 1) {
+    hint = `Press to switch ${positionLabel}`;
+  } else if (mode === 'locked' && display.cgDisplayID !== undefined) {
+    hint = 'Press to identify';
+  } else {
+    hint = '';
+  }
   a.setFeedback({
     monitorName: { value: display.name, color: nameColor },
     brightnessValue: { value: `${display.brightness}%`, color: valueColor },
     indicator: display.brightness,
-    switchHint: {
-      value:
-        displays.length > 1 ? `Press to switch ${positionLabel}` : '',
-      color: hintColor,
-    },
+    switchHint: { value: hint, color: hintColor },
   });
 }
 
@@ -171,6 +199,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
 
   override onWillAppear(ev: WillAppearEvent<BrightnessSettings>): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
+    modeByAction.set(ev.action.id, modeFromSettings(ev.payload.settings));
     if (ev.payload.settings.displayKey) {
       displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
     }
@@ -189,6 +218,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   override onWillDisappear(ev: WillDisappearEvent<BrightnessSettings>): void {
     colorsByAction.delete(ev.action.id);
     displayKeyByAction.delete(ev.action.id);
+    modeByAction.delete(ev.action.id);
     visibleInstances = Math.max(0, visibleInstances - 1);
     if (visibleInstances === 0 && refreshTimer) {
       clearInterval(refreshTimer);
@@ -200,6 +230,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     ev: DidReceiveSettingsEvent<BrightnessSettings>
   ): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
+    modeByAction.set(ev.action.id, modeFromSettings(ev.payload.settings));
     if (ev.payload.settings.displayKey) {
       displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
     } else {
@@ -221,9 +252,25 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
       return;
     }
 
-    // Cycle THIS dial only — find current position, advance by one,
-    // wrap around. Each dial has its own key in displayKeyByAction so
-    // dial #1 doesn't drag dial #2 along.
+    const mode = modeFor(ev.action.id);
+
+    if (mode === 'locked') {
+      // Locked: press is a safe no-op for the brightness state. Just
+      // identify the current display so the user can confirm which
+      // monitor this dial is bound to.
+      const currentKey = ensureCurrentKey(ev.action.id);
+      const display = findDisplay(currentKey);
+      if (display) {
+        refreshBrightness(display);
+        highlightDisplay(display);
+        updateFeedbackForAction(ev.action);
+      }
+      return;
+    }
+
+    // Cycle mode: advance THIS dial only — find current position,
+    // advance by one, wrap around. Each dial has its own key in
+    // displayKeyByAction so dial #1 doesn't drag dial #2 along.
     const currentKey = ensureCurrentKey(ev.action.id);
     const currentIdx = indexOfDisplay(currentKey);
     const nextIdx = (currentIdx + 1) % displays.length;

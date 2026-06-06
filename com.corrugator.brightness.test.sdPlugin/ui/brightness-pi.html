@@ -161,20 +161,71 @@
       outline: none;
       border-color: #ffd54a;
     }
+    .mode-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 4px 0;
+    }
+    .mode-row label {
+      flex: 1;
+      cursor: pointer;
+      user-select: none;
+      line-height: 1.4;
+    }
+    .mode-row .mode-label-title {
+      color: #eee;
+      font-weight: 500;
+    }
+    .mode-row .mode-label-desc {
+      color: #8a8a8a;
+      font-size: 10.5px;
+      display: block;
+      margin-top: 1px;
+    }
+    .mode-row input[type="radio"] {
+      margin-top: 3px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
   <div class="sdpi-wrapper">
     <div class="section-title">Current Display</div>
     <div class="help" style="margin-bottom:4px">
-      Pick which monitor this dial currently controls. <b>Press</b>
-      the dial to cycle to the next monitor, <b>rotate</b> to adjust
-      its brightness. Each dial tracks its own current display —
-      cycling one doesn't affect the others.
+      Pick which monitor this dial controls. Rotate to adjust its
+      brightness. Each dial tracks its own display — independent of
+      the others.
     </div>
     <select class="display-picker" id="displayPicker">
       <option value="">— Select a display —</option>
     </select>
+
+    <div class="section-title">Press Behavior</div>
+
+    <div class="mode-row">
+      <input type="radio" name="mode" id="modeLocked" value="locked" />
+      <label for="modeLocked">
+        <span class="mode-label-title">Locked</span>
+        <span class="mode-label-desc">
+          Pressing the dial only flashes the current monitor in red
+          (identify). Safe against accidental presses — the dial
+          stays on the selected display.
+        </span>
+      </label>
+    </div>
+
+    <div class="mode-row">
+      <input type="radio" name="mode" id="modeCycle" value="cycle" />
+      <label for="modeCycle">
+        <span class="mode-label-title">Cycle</span>
+        <span class="mode-label-desc">
+          Pressing the dial moves it to the next monitor in the list
+          (only this dial, not the others). The choice is remembered
+          across restarts.
+        </span>
+      </label>
+    </div>
 
     <div class="section-title">Colors</div>
 
@@ -257,6 +308,7 @@
         if (data.event === 'didReceiveSettings') {
           settings = data.payload?.settings || {};
           applyColorsToUI();
+          applyModeToUI();
           renderDisplayPicker();
         } else if (data.event === 'didReceiveGlobalSettings') {
           globalSettings = data.payload?.settings || {};
@@ -290,6 +342,19 @@
         }
         saveActionSettings();
       });
+
+      // Per-action press behavior (locked vs cycle).
+      for (const id of ['modeLocked', 'modeCycle']) {
+        document.getElementById(id).addEventListener('change', function () {
+          if (this.checked) {
+            settings.mode = this.value;
+            saveActionSettings();
+          }
+        });
+      }
+
+      // Initial mode display
+      applyModeToUI();
 
       // Diagnostic logging toggle (global settings).
       document.getElementById('diagnosticLogging').addEventListener('change', function () {
@@ -340,6 +405,13 @@
 
     function applyGlobalToUI() {
       document.getElementById('diagnosticLogging').checked = !!globalSettings.diagnosticLogging;
+    }
+
+    function applyModeToUI() {
+      // Default to 'locked' if no mode set yet — matches plugin default.
+      const mode = settings.mode === 'cycle' ? 'cycle' : 'locked';
+      document.getElementById('modeLocked').checked = mode === 'locked';
+      document.getElementById('modeCycle').checked = mode === 'cycle';
     }
 
     function requestDisplays() {
