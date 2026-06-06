@@ -9,7 +9,7 @@
       "Name": "Brightness (per-button)",
       "UUID": "com.corrugator.brightness.test.dial",
       "Icon": "imgs/actions/brightness/icon",
-      "Tooltip": "Bind one dial to one specific monitor. Rotate to adjust brightness, press to identify the monitor.",
+      "Tooltip": "Each dial cycles its own monitors independently. Rotate to adjust brightness, press to switch to next monitor.",
       "Controllers": [
         "Encoder"
       ],
@@ -22,7 +22,7 @@
       "Encoder": {
         "layout": "layouts/brightness.json",
         "TriggerDescription": {
-          "Push": "Identify Monitor",
+          "Push": "Switch Monitor",
           "Rotate": "Adjust Brightness"
         }
       }

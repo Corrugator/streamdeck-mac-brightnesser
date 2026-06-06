@@ -8440,36 +8440,43 @@ function findDisplay(key) {
 function loadDisplays() {
     displays = getDisplays();
 }
+function indexOfDisplay(key) {
+    if (!key)
+        return -1;
+    return displays.findIndex((d) => d.stableKey === key);
+}
+/** Default to the first display if this action has no current binding. */
+function ensureCurrentKey(actionId) {
+    let key = displayKeyByAction.get(actionId);
+    if (key && indexOfDisplay(key) !== -1)
+        return key;
+    if (displays.length > 0) {
+        key = displays[0].stableKey;
+        displayKeyByAction.set(actionId, key);
+    }
+    return key;
+}
 function updateFeedbackForAction(a) {
     const { nameColor, valueColor, hintColor } = colorsFor(a.id);
-    const key = displayKeyByAction.get(a.id);
+    const key = ensureCurrentKey(a.id);
     const display = findDisplay(key);
-    if (!key) {
-        // No display assigned yet — prompt user via the LCD.
-        a.setFeedback({
-            monitorName: { value: 'Not configured', color: nameColor },
-            brightnessValue: { value: '--', color: valueColor },
-            indicator: 0,
-            switchHint: { value: 'Open settings → pick a display', color: hintColor },
-        });
-        return;
-    }
     if (!display) {
-        // Display assigned but currently not connected.
         a.setFeedback({
-            monitorName: { value: 'Disconnected', color: nameColor },
+            monitorName: { value: 'No Displays', color: nameColor },
             brightnessValue: { value: '--', color: valueColor },
             indicator: 0,
-            switchHint: { value: 'Display not connected', color: hintColor },
+            switchHint: { value: 'No monitors found', color: hintColor },
         });
         return;
     }
+    const idx = indexOfDisplay(key);
+    const positionLabel = displays.length > 1 ? `${idx + 1}/${displays.length}` : '';
     a.setFeedback({
         monitorName: { value: display.name, color: nameColor },
         brightnessValue: { value: `${display.brightness}%`, color: valueColor },
         indicator: display.brightness,
         switchHint: {
-            value: display.cgDisplayID !== undefined ? 'Press to identify' : '',
+            value: displays.length > 1 ? `Press to switch ${positionLabel}` : '',
             color: hintColor,
         },
     });
@@ -8570,19 +8577,33 @@ let BrightnessDial = (() => {
                 updateFeedbackForAction(ev.action);
             }
         }
-        onDialDown(ev) {
-            const key = displayKeyByAction.get(ev.action.id);
-            const display = findDisplay(key);
-            if (!display) {
+        async onDialDown(ev) {
+            if (displays.length === 0) {
+                loadDisplays();
+            }
+            if (displays.length === 0) {
                 updateFeedbackForAction(ev.action);
                 return;
             }
-            refreshBrightness(display);
-            highlightDisplay(display);
+            // Cycle THIS dial only — find current position, advance by one,
+            // wrap around. Each dial has its own key in displayKeyByAction so
+            // dial #1 doesn't drag dial #2 along.
+            const currentKey = ensureCurrentKey(ev.action.id);
+            const currentIdx = indexOfDisplay(currentKey);
+            const nextIdx = (currentIdx + 1) % displays.length;
+            const nextDisplay = displays[nextIdx];
+            displayKeyByAction.set(ev.action.id, nextDisplay.stableKey);
+            refreshBrightness(nextDisplay);
+            highlightDisplay(nextDisplay);
             updateFeedbackForAction(ev.action);
+            // Persist so this dial restores to the same display next launch.
+            await ev.action.setSettings({
+                ...ev.payload.settings,
+                displayKey: nextDisplay.stableKey,
+            });
         }
         onDialRotate(ev) {
-            const key = displayKeyByAction.get(ev.action.id);
+            const key = ensureCurrentKey(ev.action.id);
             const display = findDisplay(key);
             if (!display) {
                 updateFeedbackForAction(ev.action);
