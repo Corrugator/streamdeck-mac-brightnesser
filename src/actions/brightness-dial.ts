@@ -1,5 +1,6 @@
 import streamDeck, {
   action,
+  DialAction,
   DialDownEvent,
   DialRotateEvent,
   DidReceiveSettingsEvent,
@@ -17,6 +18,8 @@ import {
 } from './display-manager';
 
 type BrightnessSettings = {
+  /** Stable identity key of the display this dial controls. */
+  displayKey?: string;
   nameColor?: string;
   valueColor?: string;
   hintColor?: string;
@@ -35,11 +38,17 @@ const DEFAULT_COLORS: Colors = {
   hintColor: DEFAULT_COLOR,
 };
 
+// Module-level cache of all currently-connected displays. Shared across
+// actions because the helper invocation is heavy and the data is the same
+// for everyone.
 let displays: Display[] = [];
-let currentIndex = 0;
 let refreshTimer: ReturnType<typeof setInterval> | undefined;
 let visibleInstances = 0;
 const colorsByAction = new Map<string, Colors>();
+// Per-action assignment: which display's stableKey each dial controls.
+// This is the core of the "one dial = one monitor" model — replaces the
+// shared currentIndex from the cycle-based prototype.
+const displayKeyByAction = new Map<string, string>();
 
 function colorsFor(actionId: string): Colors {
   return colorsByAction.get(actionId) ?? DEFAULT_COLORS;
@@ -53,61 +62,65 @@ function colorsFromSettings(settings: BrightnessSettings): Colors {
   };
 }
 
-function currentDisplay(): Display | undefined {
-  return displays[currentIndex];
+function findDisplay(key: string | undefined): Display | undefined {
+  if (!key) return undefined;
+  return displays.find((d) => d.stableKey === key);
 }
 
 function loadDisplays(): void {
-  const newDisplays = getDisplays();
-  const prev = currentDisplay();
-  if (newDisplays.length > 0 && prev) {
-    const newIdx = newDisplays.findIndex((d) => d.id === prev.id);
-    currentIndex = newIdx >= 0 ? newIdx : 0;
-  } else {
-    currentIndex = 0;
+  displays = getDisplays();
+}
+
+function updateFeedbackForAction(a: DialAction<BrightnessSettings>): void {
+  const { nameColor, valueColor, hintColor } = colorsFor(a.id);
+  const key = displayKeyByAction.get(a.id);
+  const display = findDisplay(key);
+
+  if (!key) {
+    // No display assigned yet — prompt user via the LCD.
+    a.setFeedback({
+      monitorName: { value: 'Not configured', color: nameColor },
+      brightnessValue: { value: '--', color: valueColor },
+      indicator: 0,
+      switchHint: { value: 'Open settings → pick a display', color: hintColor },
+    });
+    return;
   }
-  displays = newDisplays;
+
+  if (!display) {
+    // Display assigned but currently not connected.
+    a.setFeedback({
+      monitorName: { value: 'Disconnected', color: nameColor },
+      brightnessValue: { value: '--', color: valueColor },
+      indicator: 0,
+      switchHint: { value: 'Display not connected', color: hintColor },
+    });
+    return;
+  }
+
+  a.setFeedback({
+    monitorName: { value: display.name, color: nameColor },
+    brightnessValue: { value: `${display.brightness}%`, color: valueColor },
+    indicator: display.brightness,
+    switchHint: {
+      value: display.cgDisplayID !== undefined ? 'Press to identify' : '',
+      color: hintColor,
+    },
+  });
 }
 
 function updateAllFeedback(instance: BrightnessDial): void {
-  const display = currentDisplay();
   for (const a of instance.actions) {
     if (a.isDial()) {
-      const { nameColor, valueColor, hintColor } = colorsFor(a.id);
-      if (!display) {
-        a.setFeedback({
-          monitorName: { value: 'No Displays', color: nameColor },
-          brightnessValue: { value: '--', color: valueColor },
-          indicator: 0,
-          switchHint: { value: 'No monitors found', color: hintColor },
-        });
-      } else {
-        const monitorLabel =
-          displays.length > 1
-            ? `${currentIndex + 1}/${displays.length}`
-            : '';
-        a.setFeedback({
-          monitorName: { value: display.name, color: nameColor },
-          brightnessValue: { value: `${display.brightness}%`, color: valueColor },
-          indicator: display.brightness,
-          switchHint: {
-            value:
-              displays.length > 1 ? `Press to switch ${monitorLabel}` : '',
-            color: hintColor,
-          },
-        });
-      }
+      updateFeedbackForAction(a);
     }
   }
 }
 
-@action({ UUID: 'com.corrugator.brightness.dial' })
+@action({ UUID: 'com.corrugator.brightness.test.dial' })
 export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   constructor() {
     super();
-    // PI ↔ plugin RPC for the display-rename feature. The PI asks for
-    // the current list of connected displays so it can render an
-    // inline edit row per display, keyed by the stable identity hash.
     streamDeck.ui.onSendToPlugin((ev) => {
       this.handlePIMessage(ev.payload as unknown);
     });
@@ -130,12 +143,8 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
         defaultName: d.defaultName,
         customName: names[d.stableKey] ?? '',
         method: d.method,
-        // PI uses this to grey out highlight-on-focus for monitors we
-        // can't flash (DDC-only entries lack a CoreGraphics ID).
         canHighlight: d.cgDisplayID !== undefined,
       }));
-      // Cast to silence the JsonValue constraint without pulling in
-      // @elgato/utils as a direct dependency. The shape is JSON-safe.
       streamDeck.ui.sendToPropertyInspector({
         event: 'displays',
         displays: list,
@@ -146,8 +155,6 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     if (msg.event === 'highlightDisplay' && typeof msg.key === 'string') {
       const target = displays.find((d) => d.stableKey === msg.key);
       if (target) {
-        // Shorter than the dial-press highlight (2 s) — this is an
-        // exploratory cue while editing, not a confirmation.
         highlightDisplay(target, 1.5);
       }
       return;
@@ -156,6 +163,9 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
 
   override onWillAppear(ev: WillAppearEvent<BrightnessSettings>): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
+    if (ev.payload.settings.displayKey) {
+      displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
+    }
     loadDisplays();
     updateAllFeedback(this);
 
@@ -170,6 +180,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
 
   override onWillDisappear(ev: WillDisappearEvent<BrightnessSettings>): void {
     colorsByAction.delete(ev.action.id);
+    displayKeyByAction.delete(ev.action.id);
     visibleInstances = Math.max(0, visibleInstances - 1);
     if (visibleInstances === 0 && refreshTimer) {
       clearInterval(refreshTimer);
@@ -181,39 +192,38 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     ev: DidReceiveSettingsEvent<BrightnessSettings>
   ): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
-    updateAllFeedback(this);
+    if (ev.payload.settings.displayKey) {
+      displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
+    } else {
+      displayKeyByAction.delete(ev.action.id);
+    }
+    if (ev.action.isDial()) {
+      updateFeedbackForAction(ev.action);
+    }
   }
 
-  override onDialDown(_ev: DialDownEvent<BrightnessSettings>): void {
-    if (displays.length === 0) {
-      loadDisplays();
+  override onDialDown(ev: DialDownEvent<BrightnessSettings>): void {
+    const key = displayKeyByAction.get(ev.action.id);
+    const display = findDisplay(key);
+    if (!display) {
+      updateFeedbackForAction(ev.action);
+      return;
     }
-
-    if (displays.length > 1) {
-      currentIndex = (currentIndex + 1) % displays.length;
-    }
-
-    const display = currentDisplay();
-    if (display) {
-      refreshBrightness(display);
-      highlightDisplay(display);
-    }
-
-    updateAllFeedback(this);
+    refreshBrightness(display);
+    highlightDisplay(display);
+    updateFeedbackForAction(ev.action);
   }
 
   override onDialRotate(ev: DialRotateEvent<BrightnessSettings>): void {
-    const display = currentDisplay();
+    const key = displayKeyByAction.get(ev.action.id);
+    const display = findDisplay(key);
     if (!display) {
-      loadDisplays();
-      updateAllFeedback(this);
+      updateFeedbackForAction(ev.action);
       return;
     }
-
     const { ticks } = ev.payload;
     const newBrightness = display.brightness + ticks * STEP_SIZE;
     setBrightness(display, newBrightness);
-    updateAllFeedback(this);
+    updateFeedbackForAction(ev.action);
   }
-
 }

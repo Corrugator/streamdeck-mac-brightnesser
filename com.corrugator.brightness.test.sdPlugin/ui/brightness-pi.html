@@ -146,10 +146,35 @@
       font-style: italic;
       padding: 8px 0;
     }
+    select.display-picker {
+      width: 100%;
+      box-sizing: border-box;
+      background: #1f1f1f;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 5px 6px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    select.display-picker:focus {
+      outline: none;
+      border-color: #ffd54a;
+    }
   </style>
 </head>
 <body>
   <div class="sdpi-wrapper">
+    <div class="section-title">This Dial Controls</div>
+    <div class="help" style="margin-bottom:4px">
+      Pick which monitor this dial is bound to. Rotating adjusts that
+      monitor's brightness; pressing identifies it with a red flash.
+      Each dial keeps its own assignment — they don't share state.
+    </div>
+    <select class="display-picker" id="displayPicker">
+      <option value="">— Select a display —</option>
+    </select>
+
     <div class="section-title">Colors</div>
 
     <div class="sdpi-item">
@@ -231,15 +256,18 @@
         if (data.event === 'didReceiveSettings') {
           settings = data.payload?.settings || {};
           applyColorsToUI();
+          renderDisplayPicker();
         } else if (data.event === 'didReceiveGlobalSettings') {
           globalSettings = data.payload?.settings || {};
           applyGlobalToUI();
           renderDisplayList(); // re-render so existing custom names show
+          renderDisplayPicker(); // names may have changed
         } else if (data.event === 'sendToPropertyInspector') {
           const msg = data.payload || {};
           if (msg.event === 'displays' && Array.isArray(msg.displays)) {
             knownDisplays = msg.displays;
             renderDisplayList();
+            renderDisplayPicker();
           }
         }
       };
@@ -252,11 +280,53 @@
         });
       }
 
+      // Per-action display assignment.
+      document.getElementById('displayPicker').addEventListener('change', function () {
+        if (this.value) {
+          settings.displayKey = this.value;
+        } else {
+          delete settings.displayKey;
+        }
+        saveActionSettings();
+      });
+
       // Diagnostic logging toggle (global settings).
       document.getElementById('diagnosticLogging').addEventListener('change', function () {
         globalSettings.diagnosticLogging = this.checked;
         saveGlobalSettings();
       });
+    }
+
+    function renderDisplayPicker() {
+      const picker = document.getElementById('displayPicker');
+      const currentValue = settings.displayKey || '';
+      const persistedNames = (globalSettings && globalSettings.displayNames) || {};
+
+      // Rebuild options
+      picker.innerHTML = '';
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.textContent = '— Select a display —';
+      picker.appendChild(placeholder);
+
+      if (!knownDisplays || knownDisplays.length === 0) {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.disabled = true;
+        opt.textContent = 'No displays detected';
+        picker.appendChild(opt);
+        return;
+      }
+
+      for (const d of knownDisplays) {
+        const opt = document.createElement('option');
+        opt.value = d.key;
+        const labelName = persistedNames[d.key] || d.defaultName;
+        const method = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
+        opt.textContent = `${labelName}  (${method})`;
+        picker.appendChild(opt);
+      }
+      picker.value = currentValue;
     }
 
     function applyColorsToUI() {

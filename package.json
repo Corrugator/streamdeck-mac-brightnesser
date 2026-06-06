@@ -4,10 +4,10 @@
   "description": "Stream Deck+ plugin for controlling monitor brightness",
   "type": "module",
   "scripts": {
-    "build:helper": "T=$(mktemp -d) && trap 'rm -rf \"$T\"' EXIT && swiftc -O -target arm64-apple-macos12.0 -o \"$T/h-arm64\" helpers/brightness-helper.swift -framework Cocoa -framework IOKit && swiftc -O -target x86_64-apple-macos12.0 -o \"$T/h-x86_64\" helpers/brightness-helper.swift -framework Cocoa -framework IOKit && lipo -create -output com.corrugator.brightness.sdPlugin/bin/brightness-helper \"$T/h-arm64\" \"$T/h-x86_64\"",
-    "prepack:clean": "find com.corrugator.brightness.sdPlugin -name '.DS_Store' -delete",
+    "build:helper": "T=$(mktemp -d) && trap 'rm -rf \"$T\"' EXIT && swiftc -O -target arm64-apple-macos12.0 -o \"$T/h-arm64\" helpers/brightness-helper.swift -framework Cocoa -framework IOKit && swiftc -O -target x86_64-apple-macos12.0 -o \"$T/h-x86_64\" helpers/brightness-helper.swift -framework Cocoa -framework IOKit && lipo -create -output com.corrugator.brightness.test.sdPlugin/bin/brightness-helper \"$T/h-arm64\" \"$T/h-x86_64\"",
+    "prepack:clean": "find com.corrugator.brightness.test.sdPlugin -name '.DS_Store' -delete",
     "build": "npm run build:helper && rollup -c",
-    "pack": "npm run prepack:clean && NODE_ENV=production npm run build && npx @elgato/cli pack -f -o dist com.corrugator.brightness.sdPlugin",
+    "pack": "npm run prepack:clean && NODE_ENV=production npm run build && npx @elgato/cli pack -f -o dist com.corrugator.brightness.test.sdPlugin",
     "watch": "rollup -c -w"
   },
   "keywords": [
