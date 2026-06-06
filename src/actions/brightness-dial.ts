@@ -13,15 +13,17 @@ import {
   getDisplayNames,
   getDisplays,
   highlightDisplay,
+  openDisplaySettings,
   refreshBrightness,
   setBrightness,
 } from './display-manager';
 
 /**
  * Press behavior per dial:
- * - 'locked' (default): pressing only identifies the assigned display
- *   with a red flash. Safe against accidental presses; the dial stays
- *   on the selected display until the user changes it in the PI.
+ * - 'locked' (default): the dial stays on its selected display. By
+ *   default, pressing does nothing (consistent across Apple and
+ *   DDC/CI monitors). Opt-in via pressOpensSettings to make press
+ *   open System Settings → Displays.
  * - 'cycle': pressing advances THIS dial to the next display in the
  *   list (and persists the choice so it survives reload).
  */
@@ -32,10 +34,16 @@ type BrightnessSettings = {
   displayKey?: string;
   /** Press behavior, see Mode. */
   mode?: Mode;
+  /**
+   * Only used in 'locked' mode: when true, pressing the dial opens
+   * macOS System Settings → Displays. When false (default), pressing
+   * does nothing — safe against accidental presses.
+   */
+  pressOpensSettings?: boolean;
   nameColor?: string;
   valueColor?: string;
   hintColor?: string;
-  [key: string]: string | undefined;
+  [key: string]: string | boolean | undefined;
 };
 
 const DEFAULT_COLOR = '#FFFFFF';
@@ -64,6 +72,8 @@ const colorsByAction = new Map<string, Colors>();
 const displayKeyByAction = new Map<string, string>();
 // Per-action press behavior (locked vs cycle).
 const modeByAction = new Map<string, Mode>();
+// Per-action: in locked mode, should press open System Settings?
+const pressOpensSettingsByAction = new Map<string, boolean>();
 
 function modeFor(actionId: string): Mode {
   return modeByAction.get(actionId) ?? DEFAULT_MODE;
@@ -71,6 +81,10 @@ function modeFor(actionId: string): Mode {
 
 function modeFromSettings(settings: BrightnessSettings): Mode {
   return settings.mode === 'cycle' ? 'cycle' : 'locked';
+}
+
+function pressOpensSettingsFor(actionId: string): boolean {
+  return pressOpensSettingsByAction.get(actionId) ?? false;
 }
 
 function colorsFor(actionId: string): Colors {
@@ -132,9 +146,12 @@ function updateFeedbackForAction(a: DialAction<BrightnessSettings>): void {
   let hint: string;
   if (mode === 'cycle' && displays.length > 1) {
     hint = `Press to switch ${positionLabel}`;
-  } else if (mode === 'locked' && display.cgDisplayID !== undefined) {
-    hint = 'Press to identify';
+  } else if (mode === 'locked' && pressOpensSettingsFor(a.id)) {
+    hint = 'Press for settings';
   } else {
+    // Locked + no opt-in: press does nothing, no hint. Consistent for
+    // every monitor type (no more "Press to identify" sometimes-flashes
+    // that only worked for Apple displays).
     hint = '';
   }
   a.setFeedback({
@@ -200,6 +217,10 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   override onWillAppear(ev: WillAppearEvent<BrightnessSettings>): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
     modeByAction.set(ev.action.id, modeFromSettings(ev.payload.settings));
+    pressOpensSettingsByAction.set(
+      ev.action.id,
+      !!ev.payload.settings.pressOpensSettings
+    );
     if (ev.payload.settings.displayKey) {
       displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
     }
@@ -219,6 +240,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     colorsByAction.delete(ev.action.id);
     displayKeyByAction.delete(ev.action.id);
     modeByAction.delete(ev.action.id);
+    pressOpensSettingsByAction.delete(ev.action.id);
     visibleInstances = Math.max(0, visibleInstances - 1);
     if (visibleInstances === 0 && refreshTimer) {
       clearInterval(refreshTimer);
@@ -231,6 +253,10 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   ): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
     modeByAction.set(ev.action.id, modeFromSettings(ev.payload.settings));
+    pressOpensSettingsByAction.set(
+      ev.action.id,
+      !!ev.payload.settings.pressOpensSettings
+    );
     if (ev.payload.settings.displayKey) {
       displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
     } else {
@@ -255,15 +281,12 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     const mode = modeFor(ev.action.id);
 
     if (mode === 'locked') {
-      // Locked: press is a safe no-op for the brightness state. Just
-      // identify the current display so the user can confirm which
-      // monitor this dial is bound to.
-      const currentKey = ensureCurrentKey(ev.action.id);
-      const display = findDisplay(currentKey);
-      if (display) {
-        refreshBrightness(display);
-        highlightDisplay(display);
-        updateFeedbackForAction(ev.action);
+      // Locked default: press does nothing. Opt-in via PI to make
+      // press open System Settings → Displays. Consistent regardless
+      // of DisplayServices vs DDC/CI — the inconsistent "press to
+      // identify" sometimes-feature is gone.
+      if (pressOpensSettingsFor(ev.action.id)) {
+        openDisplaySettings();
       }
       return;
     }

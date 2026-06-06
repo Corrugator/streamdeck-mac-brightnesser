@@ -287,6 +287,27 @@ export function setBrightness(display: Display, value: number): void {
   }
 }
 
+/**
+ * Open macOS System Settings → Displays. The OS doesn't let us deep-link
+ * to a specific monitor's pane, so this just lands the user on the
+ * general Displays settings — useful when a brightness dial is too
+ * narrow for what they want to adjust (resolution, arrangement, etc).
+ */
+export function openDisplaySettings(): void {
+  execFile(
+    'open',
+    ['x-apple.systempreferences:com.apple.Displays-Settings.extension'],
+    { timeout: 5000 },
+    (err) => {
+      if (err) {
+        logger.error('Failed to open Display Settings', err);
+      } else {
+        logger.trace('Opened Display Settings');
+      }
+    }
+  );
+}
+
 export function highlightDisplay(display: Display, durationSeconds: number = 2): void {
   if (display.cgDisplayID === undefined) {
     logger.trace(`Highlight skipped for "${display.name}" – no cgDisplayID`);
