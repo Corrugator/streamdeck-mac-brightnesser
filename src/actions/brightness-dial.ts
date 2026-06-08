@@ -104,8 +104,29 @@ function findDisplay(key: string | undefined): Display | undefined {
   return displays.find((d) => d.stableKey === key);
 }
 
+// Track when the cached displays array was last refreshed so we can detect
+// staleness after macOS sleep — the periodic refreshTimer pauses while the
+// system is asleep, so after wake the cached array can be hours old and
+// the per-display `index` / `ddcIndex` may have shifted under us.
+let lastDisplaysRefresh = 0;
+const STALENESS_MS = 5000;
+
 function loadDisplays(): void {
   displays = getDisplays();
+  lastDisplaysRefresh = Date.now();
+}
+
+/**
+ * Refresh the displays cache if it hasn't been touched recently. Called at
+ * the entry of every dial interaction so that the first user action after
+ * a sleep/wake cycle re-resolves the helper-side indices before sending
+ * any brightness command — avoiding the "adjusts the wrong monitor"
+ * symptom Greenysmac hit in v1.1.0-rc.2.
+ */
+function ensureFreshDisplays(): void {
+  if (Date.now() - lastDisplaysRefresh > STALENESS_MS) {
+    loadDisplays();
+  }
 }
 
 function indexOfDisplay(key: string | undefined): number {
@@ -270,6 +291,11 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   override async onDialDown(
     ev: DialDownEvent<BrightnessSettings>
   ): Promise<void> {
+    // Force a fresh helper roundtrip if the cache has gone stale (e.g.
+    // post-sleep). Otherwise display.index / ddcIndex may not match
+    // what macOS currently expects, and the helper would adjust the
+    // wrong monitor.
+    ensureFreshDisplays();
     if (displays.length === 0) {
       loadDisplays();
     }
@@ -312,6 +338,9 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   }
 
   override onDialRotate(ev: DialRotateEvent<BrightnessSettings>): void {
+    // Same staleness check as onDialDown — the first rotate after a
+    // sleep/wake must operate on a fresh helper roundtrip.
+    ensureFreshDisplays();
     const key = ensureCurrentKey(ev.action.id);
     const display = findDisplay(key);
     if (!display) {

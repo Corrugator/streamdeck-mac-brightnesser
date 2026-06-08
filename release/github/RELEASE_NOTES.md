@@ -1,71 +1,61 @@
-# Brightness Control v1.1.0-rc.2 — Press-behavior consistency (Release Candidate)
+# Brightness Control v1.1.0-rc.3 — Fix sleep/wake stale state (Release Candidate)
 
-> ⚠️ **Pre-release.** Iteration on the v1.1.0 RC based on testing
-> feedback from [Issue #1](https://github.com/Corrugator/meta-streamdeck-mac-brightnesser/issues/1).
-> If v1.0.0 stable works for you, you can stay on it — install this
-> RC only if you want to help test the per-dial assignment and the
-> new press-behavior model.
+> ⚠️ **Pre-release.** Bug-fix iteration on v1.1.0 based on testing
+> feedback from [Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).
 
-Thanks to [@Greenysmac](https://github.com/Greenysmac) for testing
-v1.1.0-rc.1 and pointing out the inconsistency below.
+Thanks to [@Greenysmac](https://github.com/Greenysmac) for catching
+the sleep/wake regression in rc.2.
 
 ---
 
-## What changed since v1.1.0-rc.1
+## What changed since v1.1.0-rc.2
 
-### "Press to identify" is gone in locked mode
+### Sleep/wake: dials no longer adjust the wrong monitor
 
-In rc.1, pressing a dial in locked mode briefly flashed the bound
-monitor in red. This only worked for DisplayServices monitors (Apple
-displays) — DDC/CI monitors (LG UltraFine, Dell, etc.) silently did
-nothing. The inconsistency made dial behavior unpredictable depending
-on which monitor was bound.
+**Symptom (rc.2):** After the Mac comes back from sleep, the PI
+dropdown shows the correct displays, but rotating a dial adjusts the
+brightness of the wrong monitor (or shows a stale brightness on the
+LCD).
 
-**rc.2 fix:** by default, press in locked mode now **does nothing**.
-Same behavior regardless of monitor type. The identify feature is
-still available via the **Identify** button in the PI for naming /
-matching display.
+**Root cause:** The plugin caches the connected-displays list and
+refreshes it every 10 seconds. The refresh timer is paused while the
+Mac is asleep, so right after wake the cached list can be hours old.
+The `index` and `ddcIndex` fields we use to address each monitor
+(via the Swift helper for DisplayServices and `m1ddc` for DDC/CI)
+are positional values that macOS may reorder after wake — the
+stableKey identities don't change, but the index numbers do. Stale
+indices → brightness commands land on whatever monitor now sits at
+that position, not the one the dial is bound to.
 
-### Opt-in: press opens System Settings → Displays
-
-Picking up Greenysmac's suggestion — in locked mode you can now
-opt in to having press open macOS System Settings → Displays. Useful
-as a quick jump-off when you need anything beyond brightness
-(resolution, arrangement, HDR, etc.).
+**Fix:** Every dial interaction (`onDialRotate`, `onDialDown`) now
+checks whether the cached displays array is older than 5 seconds.
+If so, it forces a fresh helper roundtrip before processing the
+event. That way the first dial action after wake re-resolves the
+indices and subsequent rotates/presses use them. Cost is ~50–200 ms
+on the first event after sustained inactivity; subsequent events
+within the 5 second window use the cache as before.
 
 ```
-This Dial Controls
-  [Specific display]    ← e.g. "Studio Display (DisplayServices)"
+Sleep/wake symptom diagram:
 
-  ☐ Press opens System Settings → Displays
-        Off by default. Useful as a quick jump-off for resolution,
-        arrangement, or HDR — anything a brightness dial can't do.
-        Only applies when a specific display is selected.
+  Pre-sleep cache:                   Post-wake actual:
+    [0] MacBook  (DS, idx 0)           [0] Studio    (DS, idx 0)  ← reordered
+    [1] Studio   (DS, idx 1)           [1] MacBook   (DS, idx 1)
+    [2] LG       (DDC, idx 0)          [2] LG        (DDC, idx 0)
+
+  rc.2: dial bound to MacBook used cached index 0 → adjusts Studio. Wrong.
+  rc.3: dial bound to MacBook re-resolves stableKey first → fresh index 1 → adjusts MacBook. Correct.
 ```
-
-The checkbox only appears when a specific display is selected
-(hidden in Cycle mode, where press already has a defined job —
-cycling to the next monitor).
-
-### LCD switch hint reflects the new behavior
-
-| Mode | LCD hint |
-|---|---|
-| Cycle (2+ displays) | `Press to switch N/M` |
-| Locked, opt-in enabled | `Press for settings` |
-| Locked, opt-in disabled (default) | empty |
-
-No more "Press to identify" — gone everywhere.
 
 ---
 
-## Unchanged from rc.1
+## Unchanged from rc.2
 
-- Each dial has its own bound display and state (per-dial assignment)
-- Cycle mode advances only the dial that was pressed
-- PI dropdown combines "Cycle" and "Specific display" choices into
-  one widget
-- Rename displays globally, Identify button in PI for naming workflow
+- Per-dial display assignment (each dial has its own bound monitor)
+- Cycle mode (advances only the dial that was pressed)
+- Locked mode default: press does nothing
+- Opt-in: `Press opens System Settings → Displays`
+- Identify button in PI for the naming workflow
 - Per-dial text colors
 
 ## Install
@@ -76,36 +66,37 @@ No more "Press to identify" — gone everywhere.
 
 1. Download `com.corrugator.brightness.streamDeckPlugin` from the
    assets below.
-2. Double-click. Stream Deck app installs it, overwriting v1.0.0 if
-   installed.
+2. Double-click. Stream Deck app installs it, overwriting any
+   previous v1.x install.
 3. Drag the **Brightness** action onto a Stream Deck+ dial.
 4. Open the Property Inspector and pick a monitor or "Cycle".
-5. Optionally: enable "Press opens System Settings → Displays" for
-   the dials where you want that jump-off.
 
 ## Verifying the download
 
 ```bash
 shasum -a 256 com.corrugator.brightness.streamDeckPlugin
-# 153fd2b4bcf17bded3039dca5058700981ae8658bd1a84e48575d41f6d61db32
+# bf05b82ddd54aa3f0145ba4413bd5de4df101b8147887ab7ed9c3742a8e53101
 ```
 
 ## Known limitations (unchanged)
 
 - macOS only.
-- macOS doesn't allow deep-linking to a specific monitor in System
-  Settings → Displays, so press-opens-settings lands on the general
-  Displays pane, not focused on the dial's bound monitor.
-- The "Identify only works for the Mac monitor" topic from Issue #1
-  is now sidestepped (press doesn't identify in any mode), but the
-  underlying DDC-monitors-lack-cgDisplayID limitation still applies
-  to the PI's Identify button.
+- DDC/CI monitors lack a CoreGraphics display ID, so the PI's
+  Identify button doesn't flash them. (The "Identify only works for
+  Mac monitor" thread from Issue #1 is still open as a separate
+  enhancement.)
+- macOS doesn't allow deep-linking to a specific monitor in
+  System Settings → Displays — the opt-in "press opens settings"
+  lands on the general Displays pane.
 
-## Feedback
+## Test focus for this RC
 
-If you're testing, please drop notes in [Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1)
-or open a new issue. Particularly interested in:
-- Does press-opens-settings feel useful, or just visual clutter you'd
-  rather not see?
-- Anything surprising about the default-does-nothing behavior?
-- Per-dial cycling still working as expected in your setup?
+If you're testing, please confirm:
+- ✅ Sleep the Mac, wake it back up, immediately rotate a dial → does it
+  adjust the right monitor?
+- ✅ Same as above but press first, then rotate → still right?
+- ✅ Detach and reattach a display while running → does the dial
+  adapt correctly?
+
+Any regressions or weirdness — please drop a note in
+[Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).
