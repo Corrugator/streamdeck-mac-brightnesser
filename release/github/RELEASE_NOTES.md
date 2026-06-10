@@ -1,102 +1,89 @@
-# Brightness Control v1.1.0-rc.3 — Fix sleep/wake stale state (Release Candidate)
+# Brightness Control v1.1.0-rc.4 — Fix lost bindings after sleep/wake (Release Candidate)
 
 > ⚠️ **Pre-release.** Bug-fix iteration on v1.1.0 based on testing
 > feedback from [Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).
 
-Thanks to [@Greenysmac](https://github.com/Greenysmac) for catching
-the sleep/wake regression in rc.2.
+Thanks again to [@Greenysmac](https://github.com/Greenysmac) for the
+video repro of the rc.3 wake bug — exactly what was needed to pin
+this down.
 
 ---
 
-## What changed since v1.1.0-rc.2
+## What changed since v1.1.0-rc.3
 
-### Sleep/wake: dials no longer adjust the wrong monitor
+### Dial bindings survive sleep/wake (no more "everything says MacBook")
 
-**Symptom (rc.2):** After the Mac comes back from sleep, the PI
-dropdown shows the correct displays, but rotating a dial adjusts the
-brightness of the wrong monitor (or shows a stale brightness on the
-LCD).
+**Symptom (rc.3):** After wake, all dials showed "MacBook Display"
+and stayed that way until you opened the PI and changed anything —
+only then did the correct assignments come back.
 
-**Root cause:** The plugin caches the connected-displays list and
-refreshes it every 10 seconds. The refresh timer is paused while the
-Mac is asleep, so right after wake the cached list can be hours old.
-The `index` and `ddcIndex` fields we use to address each monitor
-(via the Swift helper for DisplayServices and `m1ddc` for DDC/CI)
-are positional values that macOS may reorder after wake — the
-stableKey identities don't change, but the index numbers do. Stale
-indices → brightness commands land on whatever monitor now sits at
-that position, not the one the dial is bound to.
+**Root cause:** When macOS wakes, external monitors take a few
+seconds to re-enumerate — during that window the OS reports only the
+built-in display. If the plugin's refresh timer fired inside that
+window, the displays cache contained just one entry, and the
+binding-resolution helper **overwrote** each dial's binding with the
+first available display (the MacBook). The correct binding only
+survived in the persisted settings, which are re-read when the PI
+saves something — hence "clicking inside and doing anything restores
+the state."
 
-**Fix:** Every dial interaction (`onDialRotate`, `onDialDown`) now
-checks whether the cached displays array is older than 5 seconds.
-If so, it forces a fresh helper roundtrip before processing the
-event. That way the first dial action after wake re-resolves the
-indices and subsequent rotates/presses use them. Cost is ~50–200 ms
-on the first event after sustained inactivity; subsequent events
-within the 5 second window use the cache as before.
+**Fix (three layers):**
 
-```
-Sleep/wake symptom diagram:
+1. **Bindings are never overwritten.** A dial bound to a display
+   keeps that binding even while the display is temporarily absent.
+   The LCD shows the custom display name (if set) with a
+   `Reconnecting…` hint instead of silently switching to the wrong
+   monitor. Rotating in that state does nothing (no more brightness
+   commands going to the wrong screen).
+2. **Instant wake refresh.** The plugin now listens for macOS's
+   wake notification (`systemDidWakeUp`) and refreshes immediately,
+   instead of waiting for the next poll tick.
+3. **Adaptive fast poll.** While any bound display is missing, the
+   plugin polls every **2 seconds** (instead of the normal 10) until
+   everything is back, then drops back to the normal cadence. The
+   recovery is fully automatic — no PI interaction needed.
 
-  Pre-sleep cache:                   Post-wake actual:
-    [0] MacBook  (DS, idx 0)           [0] Studio    (DS, idx 0)  ← reordered
-    [1] Studio   (DS, idx 1)           [1] MacBook   (DS, idx 1)
-    [2] LG       (DDC, idx 0)          [2] LG        (DDC, idx 0)
-
-  rc.2: dial bound to MacBook used cached index 0 → adjusts Studio. Wrong.
-  rc.3: dial bound to MacBook re-resolves stableKey first → fresh index 1 → adjusts MacBook. Correct.
-```
+**Expected behavior after this fix:** Wake the Mac → dials briefly
+show `Reconnecting…` while macOS re-attaches the external monitors
+(typically 2–5 s, hardware-dependent) → everything snaps back to the
+correct displays automatically. If you rotate a dial during the
+reconnect window, nothing happens (better than adjusting the wrong
+screen); a second later the dial is live again.
 
 ---
 
-## Unchanged from rc.2
+## Unchanged from rc.3
 
-- Per-dial display assignment (each dial has its own bound monitor)
-- Cycle mode (advances only the dial that was pressed)
-- Locked mode default: press does nothing
-- Opt-in: `Press opens System Settings → Displays`
-- Identify button in PI for the naming workflow
-- Per-dial text colors
+- Stale-index protection on every dial interaction (the rc.2 fix)
+- Per-dial display assignment, Cycle mode, locked-mode press options
+- Identify button in PI, custom display names, per-dial colors
 
 ## Install
 
 > ⚠️ Installing this RC **replaces v1.0.0** since the plugin UUID is
-> identical. If you want to keep v1.0.0 stable untouched, do not
-> install the RC.
+> identical.
 
 1. Download `com.corrugator.brightness.streamDeckPlugin` from the
    assets below.
 2. Double-click. Stream Deck app installs it, overwriting any
    previous v1.x install.
-3. Drag the **Brightness** action onto a Stream Deck+ dial.
-4. Open the Property Inspector and pick a monitor or "Cycle".
+3. Existing dial assignments and settings are preserved.
 
 ## Verifying the download
 
 ```bash
 shasum -a 256 com.corrugator.brightness.streamDeckPlugin
-# bf05b82ddd54aa3f0145ba4413bd5de4df101b8147887ab7ed9c3742a8e53101
+# 36a9d64eb75997bf9c00a0bccce9dab98a9e53e2391f388c5c9f225a934533a8
 ```
-
-## Known limitations (unchanged)
-
-- macOS only.
-- DDC/CI monitors lack a CoreGraphics display ID, so the PI's
-  Identify button doesn't flash them. (The "Identify only works for
-  Mac monitor" thread from Issue #1 is still open as a separate
-  enhancement.)
-- macOS doesn't allow deep-linking to a specific monitor in
-  System Settings → Displays — the opt-in "press opens settings"
-  lands on the general Displays pane.
 
 ## Test focus for this RC
 
-If you're testing, please confirm:
-- ✅ Sleep the Mac, wake it back up, immediately rotate a dial → does it
-  adjust the right monitor?
-- ✅ Same as above but press first, then rotate → still right?
-- ✅ Detach and reattach a display while running → does the dial
-  adapt correctly?
+- ✅ Sleep → wake → **don't touch anything** → do all dials return to
+  their correct displays within a few seconds, on their own?
+- ✅ Sleep → wake → rotate immediately during `Reconnecting…` → no
+  wrong-monitor adjustment, dial becomes live shortly after?
+- ✅ Unplug an external display while running → its dial shows
+  `Reconnecting…` → replug → dial recovers automatically?
 
-Any regressions or weirdness — please drop a note in
+Anything off — drop a note in
 [Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).

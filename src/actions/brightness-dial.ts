@@ -49,7 +49,12 @@ type BrightnessSettings = {
 const DEFAULT_COLOR = '#FFFFFF';
 const DEFAULT_MODE: Mode = 'locked';
 const STEP_SIZE = 2;
+// Normal polling cadence while all bound displays are connected.
 const REFRESH_INTERVAL_MS = 10000;
+// Fast cadence while any bound display is missing (e.g. the seconds
+// right after wake while macOS re-enumerates external monitors) so
+// "Reconnecting…" resolves quickly without user interaction.
+const RECONNECT_POLL_MS = 2000;
 
 type Colors = { nameColor: string; valueColor: string; hintColor: string };
 
@@ -63,7 +68,10 @@ const DEFAULT_COLORS: Colors = {
 // actions because the helper invocation is heavy and the data is the same
 // for everyone.
 let displays: Display[] = [];
-let refreshTimer: ReturnType<typeof setInterval> | undefined;
+// Self-rearming timeout (not setInterval): each tick picks its own delay —
+// normal cadence when everything is connected, fast cadence while any
+// bound display is missing so post-wake recovery is snappy.
+let refreshTimer: ReturnType<typeof setTimeout> | undefined;
 let visibleInstances = 0;
 const colorsByAction = new Map<string, Colors>();
 // Per-action assignment: which display's stableKey each dial controls.
@@ -134,28 +142,62 @@ function indexOfDisplay(key: string | undefined): number {
   return displays.findIndex((d) => d.stableKey === key);
 }
 
-/** Default to the first display if this action has no current binding. */
+/**
+ * Resolve this action's bound display key. NON-DESTRUCTIVE: an existing
+ * binding survives even while its display is temporarily absent from the
+ * cached list (macOS re-enumerates monitors for a few seconds during
+ * wake — rc.3 overwrote bindings with displays[0] in that window, which
+ * is why all dials showed "MacBook Display" until the user touched the
+ * PI). Only actions that were never configured get defaulted to the
+ * first available display.
+ */
 function ensureCurrentKey(actionId: string): string | undefined {
-  let key = displayKeyByAction.get(actionId);
-  if (key && indexOfDisplay(key) !== -1) return key;
+  const key = displayKeyByAction.get(actionId);
+  if (key) return key;
   if (displays.length > 0) {
-    key = displays[0].stableKey;
-    displayKeyByAction.set(actionId, key);
+    const def = displays[0].stableKey;
+    displayKeyByAction.set(actionId, def);
+    return def;
   }
-  return key;
+  return undefined;
+}
+
+/** True while any dial's bound display is missing from the cache. */
+function anyBoundDisplayMissing(): boolean {
+  for (const key of displayKeyByAction.values()) {
+    if (indexOfDisplay(key) === -1) return true;
+  }
+  return false;
 }
 
 function updateFeedbackForAction(a: DialAction<BrightnessSettings>): void {
   const { nameColor, valueColor, hintColor } = colorsFor(a.id);
   const key = ensureCurrentKey(a.id);
-  const display = findDisplay(key);
 
-  if (!display) {
+  if (!key) {
+    // Never configured AND nothing connected to default to.
     a.setFeedback({
       monitorName: { value: 'No Displays', color: nameColor },
       brightnessValue: { value: '--', color: valueColor },
       indicator: 0,
       switchHint: { value: 'No monitors found', color: hintColor },
+    });
+    return;
+  }
+
+  const display = findDisplay(key);
+  if (!display) {
+    // Bound display is temporarily absent (sleep/wake re-enumeration,
+    // unplugged cable). Keep the binding and tell the user what's
+    // happening — the fast reconnect poll restores this automatically
+    // as soon as macOS reports the monitor again.
+    const customNames = getDisplayNames();
+    const label = customNames[key] ?? 'Display';
+    a.setFeedback({
+      monitorName: { value: label, color: nameColor },
+      brightnessValue: { value: '--', color: valueColor },
+      indicator: 0,
+      switchHint: { value: 'Reconnecting…', color: hintColor },
     });
     return;
   }
@@ -198,6 +240,17 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     streamDeck.ui.onSendToPlugin((ev) => {
       this.handlePIMessage(ev.payload as unknown);
     });
+    // Refresh immediately when macOS reports wake instead of waiting
+    // for the next poll tick. External monitors may still take a few
+    // seconds to re-enumerate after this fires — the adaptive fast
+    // poll (scheduleRefresh) covers that tail until everything is back.
+    streamDeck.system.onSystemDidWakeUp(() => {
+      loadDisplays();
+      updateAllFeedback(this);
+      if (visibleInstances > 0) {
+        this.scheduleRefresh();
+      }
+    });
   }
 
   /** Public hook used by plugin.ts after global-settings updates. */
@@ -235,6 +288,30 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     }
   }
 
+  /**
+   * Self-rearming refresh loop. Each tick refreshes the displays cache,
+   * repaints every visible dial, then schedules the next tick — at the
+   * fast cadence while any bound display is missing (post-wake recovery)
+   * or the normal cadence otherwise.
+   */
+  private scheduleRefresh(): void {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer);
+    }
+    const delay = anyBoundDisplayMissing()
+      ? RECONNECT_POLL_MS
+      : REFRESH_INTERVAL_MS;
+    refreshTimer = setTimeout(() => {
+      loadDisplays();
+      updateAllFeedback(this);
+      if (visibleInstances > 0) {
+        this.scheduleRefresh();
+      } else {
+        refreshTimer = undefined;
+      }
+    }, delay);
+  }
+
   override onWillAppear(ev: WillAppearEvent<BrightnessSettings>): void {
     colorsByAction.set(ev.action.id, colorsFromSettings(ev.payload.settings));
     modeByAction.set(ev.action.id, modeFromSettings(ev.payload.settings));
@@ -250,10 +327,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
 
     visibleInstances++;
     if (!refreshTimer) {
-      refreshTimer = setInterval(() => {
-        loadDisplays();
-        updateAllFeedback(this);
-      }, REFRESH_INTERVAL_MS);
+      this.scheduleRefresh();
     }
   }
 
@@ -264,7 +338,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     pressOpensSettingsByAction.delete(ev.action.id);
     visibleInstances = Math.max(0, visibleInstances - 1);
     if (visibleInstances === 0 && refreshTimer) {
-      clearInterval(refreshTimer);
+      clearTimeout(refreshTimer);
       refreshTimer = undefined;
     }
   }
