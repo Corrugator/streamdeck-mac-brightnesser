@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Monochrome white-on-transparent icon for the Brightness Preset action.
+  Spec: Elgato guidelines — #FFFFFF, transparent background, monochromatic.
+  A sun (brightness) above a level bar with a marked preset position —
+  conveys "a fixed brightness value on a button".
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 144 144" width="144" height="144">
+
+  <!-- Sun core -->
+  <circle cx="72" cy="50" r="14" fill="white"/>
+
+  <!-- 8 sun rays -->
+  <g stroke="white" stroke-width="4" stroke-linecap="round">
+    <line x1="72" y1="22" x2="72" y2="30"/>
+    <line x1="88.5" y1="33.5" x2="94" y2="28"/>
+    <line x1="94" y1="50" x2="102" y2="50"/>
+    <line x1="88.5" y1="66.5" x2="94" y2="72"/>
+    <line x1="72" y1="70" x2="72" y2="78"/>
+    <line x1="55.5" y1="66.5" x2="50" y2="72"/>
+    <line x1="50" y1="50" x2="42" y2="50"/>
+    <line x1="55.5" y1="33.5" x2="50" y2="28"/>
+  </g>
+
+  <!-- Level bar (the "preset" track) -->
+  <rect x="24" y="100" width="96" height="16" rx="8" ry="8"
+        fill="none" stroke="white" stroke-width="4"/>
+
+  <!-- Preset marker (filled handle on the track) -->
+  <circle cx="96" cy="108" r="11" fill="white"/>
+</svg>

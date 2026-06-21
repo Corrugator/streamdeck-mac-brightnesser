@@ -1,5 +1,6 @@
 import streamDeck from '@elgato/streamdeck';
 import { BrightnessDial } from './actions/brightness-dial';
+import { BrightnessPreset } from './actions/brightness-preset';
 import { setDiagnosticLogging, setDisplayNames } from './actions/display-manager';
 
 type DisplayNamesMap = { [key: string]: string };
@@ -16,6 +17,7 @@ streamDeck.logger.setLevel('error');
 
 const dialAction = new BrightnessDial();
 streamDeck.actions.registerAction(dialAction);
+streamDeck.actions.registerAction(new BrightnessPreset());
 
 function applyGlobalSettings(settings: GlobalSettings): void {
   setDiagnosticLogging(!!settings.diagnosticLogging);

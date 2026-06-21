@@ -17,6 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { execFile as execFile$1, execFileSync } from 'child_process';
 import { accessSync, constants as constants$1, chmodSync } from 'fs';
 import { dirname, join as join$1, basename } from 'path';
+import { promisify as promisify$1 } from 'util';
 
 /**
  * Default language supported by all i18n providers.
@@ -8112,6 +8113,7 @@ typeof SuppressedError === "function" ? SuppressedError : function (error, suppr
     return e.name = "SuppressedError", e.error = error, e.suppressed = suppressed, e;
 };
 
+const execFileAsync = promisify$1(execFile$1);
 const M1DDC_CANDIDATE_PATHS = [
     '/opt/homebrew/bin/m1ddc', // Apple Silicon Homebrew
     '/usr/local/bin/m1ddc', // Intel Homebrew
@@ -8190,10 +8192,13 @@ function runFile(bin, args) {
         return '';
     }
 }
-function runFileChecked(bin, args) {
+async function runFileAsync(bin, args) {
     try {
-        const output = execFileSync(bin, args, { encoding: 'utf-8', timeout: 5000 }).trim();
-        return { ok: true, output };
+        const { stdout } = await execFileAsync(bin, args, {
+            encoding: 'utf-8',
+            timeout: 5000,
+        });
+        return { ok: true, output: stdout.trim() };
     }
     catch (e) {
         logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
@@ -8338,34 +8343,103 @@ function getDisplays() {
     logger.trace(`Found ${displays.length} displays total`);
     return displays;
 }
-function setBrightness(display, value) {
-    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+/**
+ * Fire the actual subprocess write for a single brightness target.
+ * Returns true if the write succeeded, false otherwise.
+ */
+async function writeBrightness(display, clamped) {
     if (display.method === 'ds') {
         const helper = getHelperPath();
-        const { ok } = runFileChecked(helper, ['set', String(display.index), String(clamped)]);
+        const { ok } = await runFileAsync(helper, [
+            'set',
+            String(display.index),
+            String(clamped),
+        ]);
         if (ok) {
-            display.brightness = clamped;
             logger.trace(`Set brightness DS "${display.name}" → ${clamped}%`);
         }
         else {
             logger.warn(`setBrightness DS failed for "${display.name}" target=${clamped}%`);
         }
+        return ok;
     }
     else if (display.method === 'ddc') {
         const m1ddcPath = getM1ddcPath();
         if (!m1ddcPath) {
             logger.error(`Cannot set brightness for "${display.name}" – m1ddc not found`);
-            return;
+            return false;
         }
-        const { ok } = runFileChecked(m1ddcPath, ['display', String(display.ddcIndex), 'set', 'luminance', String(clamped)]);
+        const { ok } = await runFileAsync(m1ddcPath, [
+            'display',
+            String(display.ddcIndex),
+            'set',
+            'luminance',
+            String(clamped),
+        ]);
         if (ok) {
-            display.brightness = clamped;
             logger.trace(`Set brightness DDC "${display.name}" → ${clamped}%`);
         }
         else {
             logger.warn(`setBrightness DDC failed for "${display.name}" target=${clamped}%`);
         }
+        return ok;
     }
+    return false;
+}
+/**
+ * Direct, awaitable brightness write for one-shot callers (e.g. preset
+ * keypad buttons) that need to know whether it worked. Unlike the
+ * coalesced fire-and-forget `setBrightness` — which exists to absorb rapid
+ * dial ticks — this performs a single awaited write and reports success,
+ * so the caller can decide showOk/showAlert. Still updates
+ * `display.brightness` optimistically for consistency.
+ */
+async function applyBrightnessNow(display, value) {
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    const ok = await writeBrightness(display, clamped);
+    if (ok)
+        display.brightness = clamped;
+    return ok;
+}
+const pendingByKey = new Map();
+async function flushWrites(display) {
+    const pending = pendingByKey.get(display.stableKey);
+    if (!pending || pending.writing)
+        return;
+    pending.writing = true;
+    try {
+        let lastWritten = -1;
+        // Keep writing while newer ticks have moved the target. lastWritten is
+        // advanced unconditionally so a failing write can't spin forever.
+        while (pending.target !== lastWritten) {
+            const target = pending.target;
+            await writeBrightness(display, target);
+            lastWritten = target;
+        }
+    }
+    finally {
+        pending.writing = false;
+        pendingByKey.delete(display.stableKey);
+    }
+}
+/**
+ * Optimistically update `display.brightness` (so feedback and subsequent
+ * ticks read the latest value immediately) and queue a coalesced async
+ * write. Replaces the old synchronous setBrightness — see flushWrites.
+ */
+function setBrightness(display, value) {
+    const clamped = Math.max(0, Math.min(100, Math.round(value)));
+    display.brightness = clamped;
+    const existing = pendingByKey.get(display.stableKey);
+    if (existing) {
+        existing.target = clamped;
+        if (existing.writing)
+            return; // the in-flight write will pick this up
+    }
+    else {
+        pendingByKey.set(display.stableKey, { target: clamped, writing: false });
+    }
+    void flushWrites(display);
 }
 /**
  * Open macOS System Settings → Displays. The OS doesn't let us deep-link
@@ -8420,7 +8494,10 @@ function refreshBrightness(display) {
 }
 
 const DEFAULT_COLOR = '#FFFFFF';
-const DEFAULT_MODE = 'locked';
+// Fresh, never-configured dials default to cycling through every display
+// rather than sitting on "nothing selected" — the user picks a specific
+// monitor only if they want to pin one.
+const DEFAULT_MODE = 'cycle';
 const STEP_SIZE = 2;
 // Normal polling cadence while all bound displays are connected.
 const REFRESH_INTERVAL_MS = 10000;
@@ -8455,7 +8532,9 @@ function modeFor(actionId) {
     return modeByAction.get(actionId) ?? DEFAULT_MODE;
 }
 function modeFromSettings(settings) {
-    return settings.mode === 'cycle' ? 'cycle' : 'locked';
+    // Only an explicit 'locked' pins the dial; anything unset defaults to
+    // cycle (see DEFAULT_MODE).
+    return settings.mode === 'locked' ? 'locked' : 'cycle';
 }
 function pressOpensSettingsFor(actionId) {
     return pressOpensSettingsByAction.get(actionId) ?? false;
@@ -8776,11 +8855,106 @@ let BrightnessDial = (() => {
     return _classThis;
 })();
 
+/**
+ * Brightness Preset — a keypad button that sets a FIXED brightness on a
+ * specific monitor (or every connected monitor) with a single press.
+ *
+ * Deliberately separate from the dial action: a press = absolute value,
+ * a rotate = relative change. Keeping them apart means the dial's
+ * sleep/wake handling stays untouched. This action holds no long-lived
+ * state and runs no polling timer — it pulls a fresh display list on every
+ * press, which makes it inherently robust against the post-sleep index
+ * shift the dial has to guard against.
+ */
+/** Sentinel displayKey meaning "apply to every connected display". */
+const ALL_DISPLAYS = '__all__';
+const DEFAULT_TARGET = 50;
+function clampPercent(value) {
+    if (typeof value !== 'number' || isNaN(value))
+        return DEFAULT_TARGET;
+    return Math.max(0, Math.min(100, Math.round(value)));
+}
+let BrightnessPreset = (() => {
+    let _classDecorators = [action({ UUID: 'com.corrugator.brightness.preset' })];
+    let _classDescriptor;
+    let _classExtraInitializers = [];
+    let _classThis;
+    let _classSuper = SingletonAction;
+    (class extends _classSuper {
+        static { _classThis = this; }
+        static {
+            const _metadata = typeof Symbol === "function" && Symbol.metadata ? Object.create(_classSuper[Symbol.metadata] ?? null) : void 0;
+            __esDecorate(null, _classDescriptor = { value: _classThis }, _classDecorators, { kind: "class", name: _classThis.name, metadata: _metadata }, null, _classExtraInitializers);
+            _classThis = _classDescriptor.value;
+            if (_metadata) Object.defineProperty(_classThis, Symbol.metadata, { enumerable: true, configurable: true, writable: true, value: _metadata });
+            __runInitializers(_classThis, _classExtraInitializers);
+        }
+        /**
+         * Action-scoped PI message handler. Using the scoped override (instead
+         * of the global streamDeck.ui.onSendToPlugin the dial registers) keeps
+         * the preset's PI traffic from being answered twice. Pulls the display
+         * list fresh so a setup with ONLY preset buttons (no dial ever shown)
+         * still gets a populated picker.
+         */
+        onSendToPlugin(ev) {
+            const msg = ev.payload;
+            if (msg?.event !== 'getDisplays')
+                return;
+            const names = getDisplayNames();
+            const list = getDisplays().map((d) => ({
+                key: d.stableKey,
+                defaultName: d.defaultName,
+                customName: names[d.stableKey] ?? '',
+                method: d.method,
+            }));
+            streamDeck.ui.sendToPropertyInspector({
+                event: 'displays',
+                displays: list,
+            });
+        }
+        async onKeyDown(ev) {
+            const { displayKey, targetBrightness } = ev.payload.settings;
+            const target = clampPercent(targetBrightness);
+            // Not configured yet — nothing to do, signal it.
+            if (!displayKey) {
+                await ev.action.showAlert();
+                return;
+            }
+            // Pull fresh every press: robust against post-sleep index shifts and
+            // plug/unplug without any cached state of our own.
+            const displays = getDisplays();
+            let targets;
+            if (displayKey === ALL_DISPLAYS) {
+                targets = displays;
+            }
+            else {
+                const match = displays.find((d) => d.stableKey === displayKey);
+                targets = match ? [match] : [];
+            }
+            if (targets.length === 0) {
+                // Bound display absent (asleep / unplugged / m1ddc missing).
+                await ev.action.showAlert();
+                return;
+            }
+            const results = await Promise.all(targets.map((d) => applyBrightnessNow(d, target)));
+            const anyOk = results.some((ok) => ok);
+            if (anyOk) {
+                await ev.action.showOk();
+            }
+            else {
+                await ev.action.showAlert();
+            }
+        }
+    });
+    return _classThis;
+})();
+
 // SDK-internal noise is suppressed; our own logger calls additionally
 // gate on the user-controlled diagnosticLogging flag (default: off).
 streamDeck.logger.setLevel('error');
 const dialAction = new BrightnessDial();
 streamDeck.actions.registerAction(dialAction);
+streamDeck.actions.registerAction(new BrightnessPreset());
 function applyGlobalSettings(settings) {
     setDiagnosticLogging(!!settings.diagnosticLogging);
     setDisplayNames(settings.displayNames ?? {});

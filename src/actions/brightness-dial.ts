@@ -20,12 +20,13 @@ import {
 
 /**
  * Press behavior per dial:
- * - 'locked' (default): the dial stays on its selected display. By
- *   default, pressing does nothing (consistent across Apple and
- *   DDC/CI monitors). Opt-in via pressOpensSettings to make press
- *   open System Settings → Displays.
- * - 'cycle': pressing advances THIS dial to the next display in the
- *   list (and persists the choice so it survives reload).
+ * - 'cycle' (default): pressing advances THIS dial to the next display
+ *   in the list (and persists the choice so it survives reload). A fresh,
+ *   never-configured dial starts here.
+ * - 'locked': the dial stays on its selected display. By default,
+ *   pressing does nothing (consistent across Apple and DDC/CI monitors).
+ *   Opt-in via pressOpensSettings to make press open System Settings →
+ *   Displays.
  */
 type Mode = 'locked' | 'cycle';
 
@@ -47,7 +48,10 @@ type BrightnessSettings = {
 };
 
 const DEFAULT_COLOR = '#FFFFFF';
-const DEFAULT_MODE: Mode = 'locked';
+// Fresh, never-configured dials default to cycling through every display
+// rather than sitting on "nothing selected" — the user picks a specific
+// monitor only if they want to pin one.
+const DEFAULT_MODE: Mode = 'cycle';
 const STEP_SIZE = 2;
 // Normal polling cadence while all bound displays are connected.
 const REFRESH_INTERVAL_MS = 10000;
@@ -88,7 +92,9 @@ function modeFor(actionId: string): Mode {
 }
 
 function modeFromSettings(settings: BrightnessSettings): Mode {
-  return settings.mode === 'cycle' ? 'cycle' : 'locked';
+  // Only an explicit 'locked' pins the dial; anything unset defaults to
+  // cycle (see DEFAULT_MODE).
+  return settings.mode === 'locked' ? 'locked' : 'cycle';
 }
 
 function pressOpensSettingsFor(actionId: string): boolean {

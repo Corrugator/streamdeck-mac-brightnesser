@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Brightness Preset Settings</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 12px;
+      color: #ccc;
+      background: #2d2d2d;
+      margin: 0;
+      padding: 12px;
+    }
+    .sdpi-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .section-title {
+      font-size: 11px;
+      color: #969696;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid #444;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+      margin-top: 4px;
+    }
+    .help {
+      color: #8a8a8a;
+      font-size: 10.5px;
+      line-height: 1.4;
+      margin-top: 2px;
+    }
+    select.display-picker {
+      width: 100%;
+      box-sizing: border-box;
+      background: #1f1f1f;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 5px 6px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    select.display-picker:focus {
+      outline: none;
+      border-color: #ffd54a;
+    }
+    .brightness-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    input[type="range"] {
+      flex: 1;
+      accent-color: #ffd54a;
+      cursor: pointer;
+    }
+    input[type="number"] {
+      width: 56px;
+      box-sizing: border-box;
+      background: #1f1f1f;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 12px;
+      font-family: inherit;
+      text-align: right;
+    }
+    input[type="number"]:focus {
+      outline: none;
+      border-color: #ffd54a;
+    }
+    .pct {
+      color: #8a8a8a;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="sdpi-wrapper">
+    <div class="section-title">This Button Sets</div>
+    <div class="help" style="margin-bottom:4px">
+      Pick a monitor (or <b>All displays</b>) and a fixed brightness.
+      Pressing the button applies that value instantly.
+    </div>
+    <select class="display-picker" id="displayPicker">
+      <option value="" disabled selected>— Select a monitor —</option>
+    </select>
+
+    <div class="section-title">Brightness</div>
+    <div class="brightness-row">
+      <input type="range" id="brightnessRange" min="0" max="100" step="1" value="50" />
+      <input type="number" id="brightnessNumber" min="0" max="100" step="1" value="50" />
+      <span class="pct">%</span>
+    </div>
+  </div>
+
+  <script>
+    let websocket = null;
+    let uuid = null;
+    let actionUUID = null;
+    let settings = {};
+    let globalSettings = {};
+    let knownDisplays = []; // [{key, defaultName, customName, method}]
+
+    const ALL_DISPLAYS = '__all__';
+
+    function connectElgatoStreamDeckSocket(port, pluginUUID, registerEvent, info, actionInfoStr) {
+      uuid = pluginUUID;
+      const actionInfo = JSON.parse(actionInfoStr);
+      actionUUID = actionInfo.action;
+      settings = actionInfo.payload?.settings || {};
+
+      applyBrightnessToUI();
+
+      websocket = new WebSocket('ws://127.0.0.1:' + port);
+      websocket.onopen = function () {
+        websocket.send(JSON.stringify({ event: registerEvent, uuid: pluginUUID }));
+        // Custom display names live in global settings.
+        websocket.send(JSON.stringify({ event: 'getGlobalSettings', context: pluginUUID }));
+        requestDisplays();
+      };
+
+      websocket.onmessage = function (evt) {
+        const data = JSON.parse(evt.data);
+        if (data.event === 'didReceiveSettings') {
+          settings = data.payload?.settings || {};
+          applyBrightnessToUI();
+          renderDisplayPicker();
+        } else if (data.event === 'didReceiveGlobalSettings') {
+          globalSettings = data.payload?.settings || {};
+          renderDisplayPicker(); // names may have changed
+        } else if (data.event === 'sendToPropertyInspector') {
+          const msg = data.payload || {};
+          if (msg.event === 'displays' && Array.isArray(msg.displays)) {
+            knownDisplays = msg.displays;
+            renderDisplayPicker();
+          }
+        }
+      };
+
+      document.getElementById('displayPicker').addEventListener('change', function () {
+        if (this.value) {
+          settings.displayKey = this.value;
+          saveActionSettings();
+        }
+      });
+
+      const range = document.getElementById('brightnessRange');
+      const number = document.getElementById('brightnessNumber');
+
+      range.addEventListener('input', function () {
+        number.value = this.value;
+        settings.targetBrightness = clampPercent(this.value);
+        saveActionSettings();
+      });
+
+      number.addEventListener('input', function () {
+        const v = clampPercent(this.value);
+        range.value = v;
+        settings.targetBrightness = v;
+        saveActionSettings();
+      });
+    }
+
+    function clampPercent(v) {
+      let n = parseInt(v, 10);
+      if (isNaN(n)) n = 50;
+      return Math.max(0, Math.min(100, n));
+    }
+
+    function applyBrightnessToUI() {
+      const v =
+        typeof settings.targetBrightness === 'number'
+          ? clampPercent(settings.targetBrightness)
+          : 50;
+      document.getElementById('brightnessRange').value = v;
+      document.getElementById('brightnessNumber').value = v;
+    }
+
+    function renderDisplayPicker() {
+      const picker = document.getElementById('displayPicker');
+      const persistedNames = (globalSettings && globalSettings.displayNames) || {};
+      const currentValue = settings.displayKey || '';
+
+      picker.innerHTML = '';
+
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.disabled = true;
+      placeholder.textContent = '— Select a monitor —';
+      picker.appendChild(placeholder);
+
+      // "All displays" always available.
+      const all = document.createElement('option');
+      all.value = ALL_DISPLAYS;
+      all.textContent = 'All displays';
+      picker.appendChild(all);
+
+      if (knownDisplays && knownDisplays.length > 0) {
+        const sep = document.createElement('option');
+        sep.disabled = true;
+        sep.textContent = '────── or pick a specific display ──────';
+        picker.appendChild(sep);
+
+        for (const d of knownDisplays) {
+          const opt = document.createElement('option');
+          opt.value = d.key;
+          const labelName = persistedNames[d.key] || d.defaultName;
+          const method = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
+          opt.textContent = `${labelName}  (${method})`;
+          picker.appendChild(opt);
+        }
+      } else {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.disabled = true;
+        opt.textContent = '(No displays detected)';
+        picker.appendChild(opt);
+      }
+
+      picker.value = currentValue;
+    }
+
+    function requestDisplays() {
+      if (websocket && websocket.readyState === WebSocket.OPEN && actionUUID) {
+        websocket.send(JSON.stringify({
+          action: actionUUID,
+          event: 'sendToPlugin',
+          context: uuid,
+          payload: { event: 'getDisplays' }
+        }));
+      }
+    }
+
+    function saveActionSettings() {
+      if (websocket && websocket.readyState === WebSocket.OPEN) {
+        websocket.send(JSON.stringify({
+          event: 'setSettings',
+          context: uuid,
+          payload: settings
+        }));
+      }
+    }
+  </script>
+</body>
+</html>

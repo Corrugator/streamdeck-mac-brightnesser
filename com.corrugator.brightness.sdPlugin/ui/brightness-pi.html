@@ -324,13 +324,12 @@
       const picker = document.getElementById('displayPicker');
       const persistedNames = (globalSettings && globalSettings.displayNames) || {};
 
-      // Resolve current value: cycle wins; else locked display key;
-      // else nothing selected so the placeholder shows.
-      const mode = settings.mode === 'cycle' ? 'cycle' : 'locked';
-      let currentValue = '';
-      if (mode === 'cycle') {
-        currentValue = '__cycle__';
-      } else if (settings.displayKey) {
+      // Resolve current value. Default (unset mode) is cycle, so a fresh
+      // dial pre-selects "Cycle through all displays" instead of the empty
+      // placeholder. Only an explicit 'locked' + displayKey pins a monitor.
+      const mode = settings.mode === 'locked' ? 'locked' : 'cycle';
+      let currentValue = '__cycle__';
+      if (mode === 'locked' && settings.displayKey) {
         currentValue = settings.displayKey;
       }
 
@@ -394,7 +393,7 @@
       // display is selected (not when "Cycle" is picked).
       const row = document.getElementById('pressOpensSettingsRow');
       const checkbox = document.getElementById('pressOpensSettings');
-      const isLocked = settings.mode !== 'cycle' && !!settings.displayKey;
+      const isLocked = settings.mode === 'locked' && !!settings.displayKey;
       row.style.display = isLocked ? '' : 'none';
       checkbox.checked = !!settings.pressOpensSettings;
     }
