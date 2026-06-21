@@ -146,10 +146,47 @@
       font-style: italic;
       padding: 8px 0;
     }
+    select.display-picker {
+      width: 100%;
+      box-sizing: border-box;
+      background: #1f1f1f;
+      color: #eee;
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 5px 6px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    select.display-picker:focus {
+      outline: none;
+      border-color: #ffd54a;
+    }
   </style>
 </head>
 <body>
   <div class="sdpi-wrapper">
+    <div class="section-title">This Dial Controls</div>
+    <div class="help" style="margin-bottom:4px">
+      Pick a specific monitor (press does nothing by default) or
+      <b>Cycle</b> through all monitors (press moves to the next).
+      Each dial is independent — they don't share state.
+    </div>
+    <select class="display-picker" id="displayPicker">
+      <option value="" disabled selected>— Select an option —</option>
+    </select>
+
+    <div class="toggle-row" id="pressOpensSettingsRow" style="display:none; margin-top:6px">
+      <input type="checkbox" id="pressOpensSettings" />
+      <label for="pressOpensSettings">
+        Press opens System Settings → Displays
+        <div class="help">
+          Off by default. Useful as a quick jump-off for resolution,
+          arrangement, or HDR — anything a brightness dial can't do.
+          Only applies when a specific display is selected.
+        </div>
+      </label>
+    </div>
+
     <div class="section-title">Colors</div>
 
     <div class="sdpi-item">
@@ -231,15 +268,19 @@
         if (data.event === 'didReceiveSettings') {
           settings = data.payload?.settings || {};
           applyColorsToUI();
+          renderDisplayPicker();
+          updatePressSettingsVisibility();
         } else if (data.event === 'didReceiveGlobalSettings') {
           globalSettings = data.payload?.settings || {};
           applyGlobalToUI();
           renderDisplayList(); // re-render so existing custom names show
+          renderDisplayPicker(); // names may have changed
         } else if (data.event === 'sendToPropertyInspector') {
           const msg = data.payload || {};
           if (msg.event === 'displays' && Array.isArray(msg.displays)) {
             knownDisplays = msg.displays;
             renderDisplayList();
+            renderDisplayPicker();
           }
         }
       };
@@ -252,11 +293,87 @@
         });
       }
 
+      // Combined picker: either "cycle" (mode=cycle) or a specific
+      // display key (mode=locked + displayKey).
+      document.getElementById('displayPicker').addEventListener('change', function () {
+        if (this.value === '__cycle__') {
+          settings.mode = 'cycle';
+          // Keep existing displayKey if any so cycling resumes from
+          // the same monitor — onDialDown advances from there.
+        } else if (this.value) {
+          settings.mode = 'locked';
+          settings.displayKey = this.value;
+        }
+        updatePressSettingsVisibility();
+        saveActionSettings();
+      });
+
+      document.getElementById('pressOpensSettings').addEventListener('change', function () {
+        settings.pressOpensSettings = this.checked;
+        saveActionSettings();
+      });
+
       // Diagnostic logging toggle (global settings).
       document.getElementById('diagnosticLogging').addEventListener('change', function () {
         globalSettings.diagnosticLogging = this.checked;
         saveGlobalSettings();
       });
+    }
+
+    function renderDisplayPicker() {
+      const picker = document.getElementById('displayPicker');
+      const persistedNames = (globalSettings && globalSettings.displayNames) || {};
+
+      // Resolve current value. Default (unset mode) is cycle, so a fresh
+      // dial pre-selects "Cycle through all displays" instead of the empty
+      // placeholder. Only an explicit 'locked' + displayKey pins a monitor.
+      const mode = settings.mode === 'locked' ? 'locked' : 'cycle';
+      let currentValue = '__cycle__';
+      if (mode === 'locked' && settings.displayKey) {
+        currentValue = settings.displayKey;
+      }
+
+      picker.innerHTML = '';
+
+      // Placeholder (only visible while no real choice is made).
+      const placeholder = document.createElement('option');
+      placeholder.value = '';
+      placeholder.disabled = true;
+      placeholder.textContent = '— Select an option —';
+      picker.appendChild(placeholder);
+
+      // Cycle option always present so the user can opt into cycling
+      // even before they decide on a starting display.
+      const cycle = document.createElement('option');
+      cycle.value = '__cycle__';
+      cycle.textContent = 'Cycle through all displays';
+      picker.appendChild(cycle);
+
+      if (knownDisplays && knownDisplays.length > 0) {
+        // Visual separator (disabled so it can't be picked).
+        const sep = document.createElement('option');
+        sep.disabled = true;
+        sep.textContent = '────── or pick a specific display ──────';
+        picker.appendChild(sep);
+
+        for (const d of knownDisplays) {
+          const opt = document.createElement('option');
+          opt.value = d.key;
+          const labelName = persistedNames[d.key] || d.defaultName;
+          const method = d.method === 'ds' ? 'DisplayServices' : 'DDC/CI';
+          opt.textContent = `${labelName}  (${method})`;
+          picker.appendChild(opt);
+        }
+      } else {
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.disabled = true;
+        opt.textContent = '(No displays detected)';
+        picker.appendChild(opt);
+      }
+
+      picker.value = currentValue;
+      updatePressSettingsVisibility();
     }
 
     function applyColorsToUI() {
@@ -269,6 +386,16 @@
 
     function applyGlobalToUI() {
       document.getElementById('diagnosticLogging').checked = !!globalSettings.diagnosticLogging;
+    }
+
+    function updatePressSettingsVisibility() {
+      // Show the press-opens-settings checkbox only when a specific
+      // display is selected (not when "Cycle" is picked).
+      const row = document.getElementById('pressOpensSettingsRow');
+      const checkbox = document.getElementById('pressOpensSettings');
+      const isLocked = settings.mode === 'locked' && !!settings.displayKey;
+      row.style.display = isLocked ? '' : 'none';
+      checkbox.checked = !!settings.pressOpensSettings;
     }
 
     function requestDisplays() {

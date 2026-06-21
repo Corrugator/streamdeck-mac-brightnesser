@@ -2,7 +2,10 @@ import { execFile, execFileSync } from 'child_process';
 import { accessSync, chmodSync, constants } from 'fs';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
+import { promisify } from 'util';
 import streamDeck from '@elgato/streamdeck';
+
+const execFileAsync = promisify(execFile);
 
 export interface Display {
   id: string;
@@ -97,10 +100,16 @@ function runFile(bin: string, args: string[]): string {
   }
 }
 
-function runFileChecked(bin: string, args: string[]): { ok: boolean; output: string } {
+async function runFileAsync(
+  bin: string,
+  args: string[]
+): Promise<{ ok: boolean; output: string }> {
   try {
-    const output = execFileSync(bin, args, { encoding: 'utf-8', timeout: 5000 }).trim();
-    return { ok: true, output };
+    const { stdout } = await execFileAsync(bin, args, {
+      encoding: 'utf-8',
+      timeout: 5000,
+    });
+    return { ok: true, output: stdout.trim() };
   } catch (e) {
     logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
     return { ok: false, output: '' };
@@ -259,32 +268,134 @@ export function getDisplays(): Display[] {
   return displays;
 }
 
-export function setBrightness(display: Display, value: number): void {
-  const clamped = Math.max(0, Math.min(100, Math.round(value)));
-
+/**
+ * Fire the actual subprocess write for a single brightness target.
+ * Returns true if the write succeeded, false otherwise.
+ */
+async function writeBrightness(display: Display, clamped: number): Promise<boolean> {
   if (display.method === 'ds') {
     const helper = getHelperPath();
-    const { ok } = runFileChecked(helper, ['set', String(display.index), String(clamped)]);
+    const { ok } = await runFileAsync(helper, [
+      'set',
+      String(display.index),
+      String(clamped),
+    ]);
     if (ok) {
-      display.brightness = clamped;
       logger.trace(`Set brightness DS "${display.name}" → ${clamped}%`);
     } else {
       logger.warn(`setBrightness DS failed for "${display.name}" target=${clamped}%`);
     }
+    return ok;
   } else if (display.method === 'ddc') {
     const m1ddcPath = getM1ddcPath();
     if (!m1ddcPath) {
       logger.error(`Cannot set brightness for "${display.name}" – m1ddc not found`);
-      return;
+      return false;
     }
-    const { ok } = runFileChecked(m1ddcPath, ['display', String(display.ddcIndex), 'set', 'luminance', String(clamped)]);
+    const { ok } = await runFileAsync(m1ddcPath, [
+      'display',
+      String(display.ddcIndex),
+      'set',
+      'luminance',
+      String(clamped),
+    ]);
     if (ok) {
-      display.brightness = clamped;
       logger.trace(`Set brightness DDC "${display.name}" → ${clamped}%`);
     } else {
       logger.warn(`setBrightness DDC failed for "${display.name}" target=${clamped}%`);
     }
+    return ok;
   }
+  return false;
+}
+
+/**
+ * Direct, awaitable brightness write for one-shot callers (e.g. preset
+ * keypad buttons) that need to know whether it worked. Unlike the
+ * coalesced fire-and-forget `setBrightness` — which exists to absorb rapid
+ * dial ticks — this performs a single awaited write and reports success,
+ * so the caller can decide showOk/showAlert. Still updates
+ * `display.brightness` optimistically for consistency.
+ */
+export async function applyBrightnessNow(
+  display: Display,
+  value: number
+): Promise<boolean> {
+  const clamped = Math.max(0, Math.min(100, Math.round(value)));
+  const ok = await writeBrightness(display, clamped);
+  if (ok) display.brightness = clamped;
+  return ok;
+}
+
+// Coalesced brightness writes, keyed by stableKey. Spinning a dial fires
+// many DialRotate events in quick succession. The old path shelled out
+// synchronously per tick — and the helper re-enumerates every display on
+// each `set` — which blocked the Node event loop (and the WebSocket) and
+// made fast spins lag, badly on slow DDC/CI monitors. Now each tick only
+// updates the latest desired value and at most ONE write runs at a time
+// per display: when it finishes, it re-writes only if the target moved
+// meanwhile. A fast spin collapses to ~2 subprocess calls per display and
+// never blocks the event loop.
+type PendingWrite = { target: number; writing: boolean };
+const pendingByKey = new Map<string, PendingWrite>();
+
+async function flushWrites(display: Display): Promise<void> {
+  const pending = pendingByKey.get(display.stableKey);
+  if (!pending || pending.writing) return;
+  pending.writing = true;
+  try {
+    let lastWritten = -1;
+    // Keep writing while newer ticks have moved the target. lastWritten is
+    // advanced unconditionally so a failing write can't spin forever.
+    while (pending.target !== lastWritten) {
+      const target = pending.target;
+      await writeBrightness(display, target);
+      lastWritten = target;
+    }
+  } finally {
+    pending.writing = false;
+    pendingByKey.delete(display.stableKey);
+  }
+}
+
+/**
+ * Optimistically update `display.brightness` (so feedback and subsequent
+ * ticks read the latest value immediately) and queue a coalesced async
+ * write. Replaces the old synchronous setBrightness — see flushWrites.
+ */
+export function setBrightness(display: Display, value: number): void {
+  const clamped = Math.max(0, Math.min(100, Math.round(value)));
+  display.brightness = clamped;
+
+  const existing = pendingByKey.get(display.stableKey);
+  if (existing) {
+    existing.target = clamped;
+    if (existing.writing) return; // the in-flight write will pick this up
+  } else {
+    pendingByKey.set(display.stableKey, { target: clamped, writing: false });
+  }
+  void flushWrites(display);
+}
+
+/**
+ * Open macOS System Settings → Displays. The OS doesn't let us deep-link
+ * to a specific monitor's pane, so this just lands the user on the
+ * general Displays settings — useful when a brightness dial is too
+ * narrow for what they want to adjust (resolution, arrangement, etc).
+ */
+export function openDisplaySettings(): void {
+  execFile(
+    'open',
+    ['x-apple.systempreferences:com.apple.Displays-Settings.extension'],
+    { timeout: 5000 },
+    (err) => {
+      if (err) {
+        logger.error('Failed to open Display Settings', err);
+      } else {
+        logger.trace('Opened Display Settings');
+      }
+    }
+  );
 }
 
 export function highlightDisplay(display: Display, durationSeconds: number = 2): void {

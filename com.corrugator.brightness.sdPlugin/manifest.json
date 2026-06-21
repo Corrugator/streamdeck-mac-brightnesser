@@ -1,7 +1,7 @@
 {
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
   "Name": "Brightness Control",
-  "Version": "1.0.0.0",
+  "Version": "1.2.0.0",
   "Author": "Corrugator",
   "UUID": "com.corrugator.brightness",
   "Actions": [
@@ -9,7 +9,7 @@
       "Name": "Brightness",
       "UUID": "com.corrugator.brightness.dial",
       "Icon": "imgs/actions/brightness/icon",
-      "Tooltip": "Control monitor brightness. Press to switch monitors, rotate to adjust brightness.",
+      "Tooltip": "Bind each dial to a specific monitor or set it to cycle through monitors. Rotate to adjust brightness.",
       "Controllers": [
         "Encoder"
       ],
@@ -22,16 +22,32 @@
       "Encoder": {
         "layout": "layouts/brightness.json",
         "TriggerDescription": {
-          "Push": "Switch Monitor",
+          "Push": "Switch monitor / open settings",
           "Rotate": "Adjust Brightness"
         }
       }
+    },
+    {
+      "Name": "Brightness Preset",
+      "UUID": "com.corrugator.brightness.preset",
+      "Icon": "imgs/actions/preset/icon",
+      "Tooltip": "Set a fixed brightness on a specific monitor (or all monitors) with one press.",
+      "Controllers": [
+        "Keypad"
+      ],
+      "States": [
+        {
+          "Image": "imgs/actions/preset/icon",
+          "TitleAlignment": "bottom"
+        }
+      ],
+      "PropertyInspectorPath": "ui/brightness-preset-pi.html"
     }
   ],
   "Category": "Brightness Control",
   "CategoryIcon": "imgs/plugin/category",
   "CodePath": "bin/plugin.js",
-  "Description": "Control monitor brightness with Stream Deck+ dials. Press to switch monitors, rotate to adjust.",
+  "Description": "Control monitor brightness with Stream Deck+ dials. Bind each dial to a specific monitor or set it to cycle — each dial is independent.",
   "Icon": "imgs/plugin/icon",
   "SDKVersion": 3,
   "Software": {
