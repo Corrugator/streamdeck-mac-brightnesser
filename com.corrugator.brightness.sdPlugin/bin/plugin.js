@@ -8699,6 +8699,21 @@ let BrightnessDial = (() => {
                     this.scheduleRefresh();
                 }
             });
+            // Same recovery for a Stream Deck that reconnects — e.g. a dock the
+            // device shares with the external monitors being unplugged and plugged
+            // back in (issue #4). This fires no sleep/wake event, so without this
+            // the dial sat on a stale "Reconnecting…" state until the user
+            // restarted the Stream Deck software. onWillAppear restarts the poll
+            // loop on its own, but re-enumerating here (and re-arming the fast poll
+            // when dials are already visible) covers the monitor re-enumeration
+            // tail the same way the wake path does.
+            streamDeck.devices.onDeviceDidConnect(() => {
+                loadDisplays();
+                updateAllFeedback(this);
+                if (visibleInstances > 0) {
+                    this.scheduleRefresh();
+                }
+            });
         }
         /** Public hook used by plugin.ts after global-settings updates. */
         refreshAllVisible() {
