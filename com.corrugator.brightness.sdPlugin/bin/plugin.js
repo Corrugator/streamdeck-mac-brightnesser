@@ -14,7 +14,7 @@ import fs, { existsSync, readFileSync } from 'node:fs';
 import path, { join } from 'node:path';
 import { cwd } from 'node:process';
 import { randomUUID } from 'node:crypto';
-import { execFile as execFile$1, execFileSync } from 'child_process';
+import { execFile as execFile$1 } from 'child_process';
 import { accessSync, constants as constants$1, chmodSync } from 'fs';
 import { dirname, join as join$1, basename } from 'path';
 import { promisify as promisify$1 } from 'util';
@@ -8118,6 +8118,19 @@ const M1DDC_CANDIDATE_PATHS = [
     '/opt/homebrew/bin/m1ddc', // Apple Silicon Homebrew
     '/usr/local/bin/m1ddc', // Intel Homebrew
 ];
+// Every helper / m1ddc call runs asynchronously. The old synchronous calls
+// blocked the event loop for up to 5 s each; a DDC monitor slow to answer
+// (e.g. right after a dock replug) stacked several of them, Stream Deck
+// stopped getting heartbeat replies, killed the plugin as unresponsive and
+// after three strikes disabled it (issue #4).
+const COMMAND_TIMEOUT_MS = 5000;
+// DDC luminance reads: a monitor that doesn't answer quickly is reported
+// with unknown brightness instead of holding up the whole display list.
+const DDC_READ_TIMEOUT_MS = 2500;
+// A child stuck in the kernel (mid DDC transaction) may not exit even on
+// SIGKILL, and execFile only calls back once it does. Stop waiting this
+// long after the kill so one wedged process can't stall refreshes forever.
+const KILL_GRACE_MS = 1000;
 // ===== User-Custom Display Names =====
 // Map<stableKey, customName>. Populated from globalSettings.displayNames by
 // plugin.ts; getDisplays() consults this to resolve `display.name`.
@@ -8183,26 +8196,29 @@ function getHelperPath() {
     helperPathCache = path;
     return path;
 }
-function runFile(bin, args) {
-    try {
-        return execFileSync(bin, args, { encoding: 'utf-8', timeout: 5000 }).trim();
-    }
-    catch (e) {
-        logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
-        return '';
-    }
-}
-async function runFileAsync(bin, args) {
-    try {
-        const { stdout } = await execFileAsync(bin, args, {
-            encoding: 'utf-8',
-            timeout: 5000,
-        });
-        return { ok: true, output: stdout.trim() };
-    }
-    catch (e) {
-        logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
+async function runFileAsync(bin, args, timeoutMs = COMMAND_TIMEOUT_MS) {
+    // Log basename only — the helper's full path would leak the home dir.
+    const label = `${basename(bin)} ${args.join(' ')}`;
+    const run = execFileAsync(bin, args, {
+        encoding: 'utf-8',
+        timeout: timeoutMs,
+        killSignal: 'SIGKILL',
+    }).then(({ stdout }) => ({ ok: true, output: stdout.trim() }), (e) => {
+        logger.error(`Command failed: ${label}`, e);
         return { ok: false, output: '' };
+    });
+    let deadline;
+    const gaveUp = new Promise((resolve) => {
+        deadline = setTimeout(() => {
+            logger.error(`Gave up waiting for: ${label}`);
+            resolve({ ok: false, output: '' });
+        }, timeoutMs + KILL_GRACE_MS);
+    });
+    try {
+        return await Promise.race([run, gaveUp]);
+    }
+    finally {
+        clearTimeout(deadline);
     }
 }
 function baseName(n) {
@@ -8224,12 +8240,12 @@ function getM1ddcPath() {
     m1ddcPathCache = null;
     return null;
 }
-function getDDCDisplays() {
+async function getDDCDisplays() {
     const result = new Map();
     const m1ddcPath = getM1ddcPath();
     if (!m1ddcPath)
         return result;
-    const output = runFile(m1ddcPath, ['display', 'list']);
+    const { output } = await runFileAsync(m1ddcPath, ['display', 'list']);
     if (!output)
         return result;
     for (const line of output.split('\n')) {
@@ -8242,16 +8258,16 @@ function getDDCDisplays() {
         const uuid = match[3];
         if (name === '(null)')
             continue;
-        const brOutput = runFile(m1ddcPath, ['display', String(ddcIndex), 'get', 'luminance']);
+        const { output: brOutput } = await runFileAsync(m1ddcPath, ['display', String(ddcIndex), 'get', 'luminance'], DDC_READ_TIMEOUT_MS);
         const rawBr = parseInt(brOutput, 10);
         const brightness = (!isNaN(rawBr) && rawBr >= 0 && rawBr <= 100) ? rawBr : -1;
         result.set(ddcIndex, { ddcIndex, name, brightness, uuid });
     }
     return result;
 }
-function getDisplays() {
+async function getDisplays() {
     const helper = getHelperPath();
-    const output = runFile(helper, ['list']);
+    const { output } = await runFileAsync(helper, ['list']);
     if (!output) {
         logger.warn('No output from brightness-helper list');
         return [];
@@ -8306,7 +8322,7 @@ function getDisplays() {
         }
     }
     if (dsUnsupportedIndices.length > 0 && getM1ddcPath()) {
-        const ddcDisplays = getDDCDisplays();
+        const ddcDisplays = await getDDCDisplays();
         // DS displays may carry a "N" suffix for duplicates (added by Swift),
         // while m1ddc returns the raw name. Compare base names, and skip as many
         // ddc entries per base name as we already have ds entries.
@@ -8471,10 +8487,10 @@ function highlightDisplay(display, durationSeconds = 2) {
     });
     logger.trace(`Highlight: "${display.name}" cgDisplayID=${display.cgDisplayID} duration=${dur}s`);
 }
-function refreshBrightness(display) {
+async function refreshBrightness(display) {
     if (display.method === 'ds') {
         const helper = getHelperPath();
-        const output = runFile(helper, ['get', String(display.index)]);
+        const { output } = await runFileAsync(helper, ['get', String(display.index)]);
         const val = parseInt(output, 10);
         if (!isNaN(val) && val >= 0 && val <= 100) {
             display.brightness = val;
@@ -8484,7 +8500,7 @@ function refreshBrightness(display) {
         const m1ddcPath = getM1ddcPath();
         if (!m1ddcPath)
             return display.brightness;
-        const output = runFile(m1ddcPath, ['display', String(display.ddcIndex), 'get', 'luminance']);
+        const { output } = await runFileAsync(m1ddcPath, ['display', String(display.ddcIndex), 'get', 'luminance'], DDC_READ_TIMEOUT_MS);
         const val = parseInt(output, 10);
         if (!isNaN(val) && val >= 0 && val <= 100) {
             display.brightness = val;
@@ -8558,22 +8574,56 @@ function findDisplay(key) {
 // staleness after macOS sleep — the periodic refreshTimer pauses while the
 // system is asleep, so after wake the cached array can be hours old and
 // the per-display `index` / `ddcIndex` may have shifted under us.
+// 0 means no enumeration has completed yet.
 let lastDisplaysRefresh = 0;
 const STALENESS_MS = 5000;
-function loadDisplays() {
-    displays = getDisplays();
-    lastDisplaysRefresh = Date.now();
+// Enumeration is async (see display-manager) and can take seconds while a
+// DDC monitor is slow to answer. Only one runs at a time; callers arriving
+// while one is in flight share a single follow-up run, because the
+// in-flight one may have started before whatever prompted them (wake,
+// reconnect, a dial waking up after sleep).
+let refreshInFlight;
+let refreshQueued;
+async function runRefresh() {
+    try {
+        displays = await getDisplays();
+        lastDisplaysRefresh = Date.now();
+    }
+    catch (e) {
+        // getDisplays() reports failures as an empty list; this only keeps a
+        // bug from becoming an unhandled rejection that kills the plugin.
+        streamDeck.logger.error('Display refresh failed', e);
+    }
+}
+function refreshDisplays() {
+    if (!refreshInFlight) {
+        refreshInFlight = runRefresh().finally(() => {
+            refreshInFlight = undefined;
+        });
+        return refreshInFlight;
+    }
+    if (!refreshQueued) {
+        refreshQueued = refreshInFlight.then(() => {
+            refreshQueued = undefined;
+            return refreshDisplays();
+        });
+    }
+    return refreshQueued;
 }
 /**
- * Refresh the displays cache if it hasn't been touched recently. Called at
+ * Refresh the displays cache if it hasn't been touched recently. Awaited at
  * the entry of every dial interaction so that the first user action after
  * a sleep/wake cycle re-resolves the helper-side indices before sending
  * any brightness command — avoiding the "adjusts the wrong monitor"
  * symptom Greenysmac hit in v1.1.0-rc.2.
  */
-function ensureFreshDisplays() {
+async function ensureFreshDisplays() {
     if (Date.now() - lastDisplaysRefresh > STALENESS_MS) {
-        loadDisplays();
+        // Join a refresh that is already on its way instead of queuing another
+        // one, so a fast spin pays for a single enumeration. A queued run wins
+        // over the in-flight one: if wake or reconnect queued it, the in-flight
+        // run may still carry pre-wake indices.
+        await (refreshQueued ?? refreshInFlight ?? refreshDisplays());
     }
 }
 function indexOfDisplay(key) {
@@ -8610,6 +8660,10 @@ function anyBoundDisplayMissing() {
     return false;
 }
 function updateFeedbackForAction(a) {
+    // Nothing to say until the first enumeration lands — painting from the
+    // empty cache would flash "No Displays" / "Reconnecting…" on every start.
+    if (lastDisplaysRefresh === 0)
+        return;
     const { nameColor, valueColor, hintColor } = colorsFor(a.id);
     const key = ensureCurrentKey(a.id);
     if (!key) {
@@ -8692,13 +8746,7 @@ let BrightnessDial = (() => {
             // for the next poll tick. External monitors may still take a few
             // seconds to re-enumerate after this fires — the adaptive fast
             // poll (scheduleRefresh) covers that tail until everything is back.
-            streamDeck.system.onSystemDidWakeUp(() => {
-                loadDisplays();
-                updateAllFeedback(this);
-                if (visibleInstances > 0) {
-                    this.scheduleRefresh();
-                }
-            });
+            streamDeck.system.onSystemDidWakeUp(() => this.refreshAndRepaint());
             // Same recovery for a Stream Deck that reconnects — e.g. a dock the
             // device shares with the external monitors being unplugged and plugged
             // back in (issue #4). This fires no sleep/wake event, so without this
@@ -8707,18 +8755,27 @@ let BrightnessDial = (() => {
             // loop on its own, but re-enumerating here (and re-arming the fast poll
             // when dials are already visible) covers the monitor re-enumeration
             // tail the same way the wake path does.
-            streamDeck.devices.onDeviceDidConnect(() => {
-                loadDisplays();
+            streamDeck.devices.onDeviceDidConnect(() => this.refreshAndRepaint());
+        }
+        /** Public hook used by plugin.ts after global-settings updates. */
+        refreshAllVisible() {
+            void refreshDisplays()
+                .then(() => updateAllFeedback(this))
+                .catch((e) => streamDeck.logger.error('Repaint failed', e));
+        }
+        /**
+         * Re-enumerate, repaint every dial, and re-arm the poll at the cadence
+         * the fresh list calls for. Shared by the wake and reconnect paths.
+         */
+        refreshAndRepaint() {
+            void refreshDisplays()
+                .then(() => {
                 updateAllFeedback(this);
                 if (visibleInstances > 0) {
                     this.scheduleRefresh();
                 }
-            });
-        }
-        /** Public hook used by plugin.ts after global-settings updates. */
-        refreshAllVisible() {
-            loadDisplays();
-            updateAllFeedback(this);
+            })
+                .catch((e) => streamDeck.logger.error('Repaint failed', e));
         }
         handlePIMessage(payload) {
             if (typeof payload !== 'object' || payload === null)
@@ -8751,7 +8808,9 @@ let BrightnessDial = (() => {
          * Self-rearming refresh loop. Each tick refreshes the displays cache,
          * repaints every visible dial, then schedules the next tick — at the
          * fast cadence while any bound display is missing (post-wake recovery)
-         * or the normal cadence otherwise.
+         * or the normal cadence otherwise. The next tick is only armed once the
+         * refresh has finished, so a slow enumeration never piles up behind
+         * itself.
          */
         scheduleRefresh() {
             if (refreshTimer) {
@@ -8761,14 +8820,17 @@ let BrightnessDial = (() => {
                 ? RECONNECT_POLL_MS
                 : REFRESH_INTERVAL_MS;
             refreshTimer = setTimeout(() => {
-                loadDisplays();
-                updateAllFeedback(this);
-                if (visibleInstances > 0) {
-                    this.scheduleRefresh();
-                }
-                else {
-                    refreshTimer = undefined;
-                }
+                void refreshDisplays()
+                    .then(() => updateAllFeedback(this))
+                    .catch((e) => streamDeck.logger.error('Display poll failed', e))
+                    .finally(() => {
+                    if (visibleInstances > 0) {
+                        this.scheduleRefresh();
+                    }
+                    else {
+                        refreshTimer = undefined;
+                    }
+                });
             }, delay);
         }
         onWillAppear(ev) {
@@ -8778,8 +8840,13 @@ let BrightnessDial = (() => {
             if (ev.payload.settings.displayKey) {
                 displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
             }
-            loadDisplays();
+            // Paint from the cache right away (instant when another dial already
+            // loaded it), then again once a fresh enumeration lands. Several dials
+            // appearing together share one enumeration.
             updateAllFeedback(this);
+            void refreshDisplays()
+                .then(() => updateAllFeedback(this))
+                .catch((e) => streamDeck.logger.error('Repaint failed', e));
             visibleInstances++;
             if (!refreshTimer) {
                 this.scheduleRefresh();
@@ -8815,9 +8882,9 @@ let BrightnessDial = (() => {
             // post-sleep). Otherwise display.index / ddcIndex may not match
             // what macOS currently expects, and the helper would adjust the
             // wrong monitor.
-            ensureFreshDisplays();
+            await ensureFreshDisplays();
             if (displays.length === 0) {
-                loadDisplays();
+                await refreshDisplays();
             }
             if (displays.length === 0) {
                 updateFeedbackForAction(ev.action);
@@ -8842,7 +8909,7 @@ let BrightnessDial = (() => {
             const nextIdx = (currentIdx + 1) % displays.length;
             const nextDisplay = displays[nextIdx];
             displayKeyByAction.set(ev.action.id, nextDisplay.stableKey);
-            refreshBrightness(nextDisplay);
+            await refreshBrightness(nextDisplay);
             highlightDisplay(nextDisplay);
             updateFeedbackForAction(ev.action);
             // Persist so this dial restores to the same display next launch.
@@ -8851,10 +8918,11 @@ let BrightnessDial = (() => {
                 displayKey: nextDisplay.stableKey,
             });
         }
-        onDialRotate(ev) {
+        async onDialRotate(ev) {
             // Same staleness check as onDialDown — the first rotate after a
-            // sleep/wake must operate on a fresh helper roundtrip.
-            ensureFreshDisplays();
+            // sleep/wake must operate on a fresh helper roundtrip. Ticks arriving
+            // while that refresh runs wait on the same one and apply in order.
+            await ensureFreshDisplays();
             const key = ensureCurrentKey(ev.action.id);
             const display = findDisplay(key);
             if (!display) {
@@ -8911,12 +8979,12 @@ let BrightnessPreset = (() => {
          * list fresh so a setup with ONLY preset buttons (no dial ever shown)
          * still gets a populated picker.
          */
-        onSendToPlugin(ev) {
+        async onSendToPlugin(ev) {
             const msg = ev.payload;
             if (msg?.event !== 'getDisplays')
                 return;
             const names = getDisplayNames();
-            const list = getDisplays().map((d) => ({
+            const list = (await getDisplays()).map((d) => ({
                 key: d.stableKey,
                 defaultName: d.defaultName,
                 customName: names[d.stableKey] ?? '',
@@ -8937,7 +9005,7 @@ let BrightnessPreset = (() => {
             }
             // Pull fresh every press: robust against post-sleep index shifts and
             // plug/unplug without any cached state of our own.
-            const displays = getDisplays();
+            const displays = await getDisplays();
             let targets;
             if (displayKey === ALL_DISPLAYS) {
                 targets = displays;

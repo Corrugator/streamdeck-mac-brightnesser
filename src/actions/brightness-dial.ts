@@ -122,24 +122,59 @@ function findDisplay(key: string | undefined): Display | undefined {
 // staleness after macOS sleep — the periodic refreshTimer pauses while the
 // system is asleep, so after wake the cached array can be hours old and
 // the per-display `index` / `ddcIndex` may have shifted under us.
+// 0 means no enumeration has completed yet.
 let lastDisplaysRefresh = 0;
 const STALENESS_MS = 5000;
 
-function loadDisplays(): void {
-  displays = getDisplays();
-  lastDisplaysRefresh = Date.now();
+// Enumeration is async (see display-manager) and can take seconds while a
+// DDC monitor is slow to answer. Only one runs at a time; callers arriving
+// while one is in flight share a single follow-up run, because the
+// in-flight one may have started before whatever prompted them (wake,
+// reconnect, a dial waking up after sleep).
+let refreshInFlight: Promise<void> | undefined;
+let refreshQueued: Promise<void> | undefined;
+
+async function runRefresh(): Promise<void> {
+  try {
+    displays = await getDisplays();
+    lastDisplaysRefresh = Date.now();
+  } catch (e) {
+    // getDisplays() reports failures as an empty list; this only keeps a
+    // bug from becoming an unhandled rejection that kills the plugin.
+    streamDeck.logger.error('Display refresh failed', e);
+  }
+}
+
+function refreshDisplays(): Promise<void> {
+  if (!refreshInFlight) {
+    refreshInFlight = runRefresh().finally(() => {
+      refreshInFlight = undefined;
+    });
+    return refreshInFlight;
+  }
+  if (!refreshQueued) {
+    refreshQueued = refreshInFlight.then(() => {
+      refreshQueued = undefined;
+      return refreshDisplays();
+    });
+  }
+  return refreshQueued;
 }
 
 /**
- * Refresh the displays cache if it hasn't been touched recently. Called at
+ * Refresh the displays cache if it hasn't been touched recently. Awaited at
  * the entry of every dial interaction so that the first user action after
  * a sleep/wake cycle re-resolves the helper-side indices before sending
  * any brightness command — avoiding the "adjusts the wrong monitor"
  * symptom Greenysmac hit in v1.1.0-rc.2.
  */
-function ensureFreshDisplays(): void {
+async function ensureFreshDisplays(): Promise<void> {
   if (Date.now() - lastDisplaysRefresh > STALENESS_MS) {
-    loadDisplays();
+    // Join a refresh that is already on its way instead of queuing another
+    // one, so a fast spin pays for a single enumeration. A queued run wins
+    // over the in-flight one: if wake or reconnect queued it, the in-flight
+    // run may still carry pre-wake indices.
+    await (refreshQueued ?? refreshInFlight ?? refreshDisplays());
   }
 }
 
@@ -177,6 +212,10 @@ function anyBoundDisplayMissing(): boolean {
 }
 
 function updateFeedbackForAction(a: DialAction<BrightnessSettings>): void {
+  // Nothing to say until the first enumeration lands — painting from the
+  // empty cache would flash "No Displays" / "Reconnecting…" on every start.
+  if (lastDisplaysRefresh === 0) return;
+
   const { nameColor, valueColor, hintColor } = colorsFor(a.id);
   const key = ensureCurrentKey(a.id);
 
@@ -250,13 +289,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     // for the next poll tick. External monitors may still take a few
     // seconds to re-enumerate after this fires — the adaptive fast
     // poll (scheduleRefresh) covers that tail until everything is back.
-    streamDeck.system.onSystemDidWakeUp(() => {
-      loadDisplays();
-      updateAllFeedback(this);
-      if (visibleInstances > 0) {
-        this.scheduleRefresh();
-      }
-    });
+    streamDeck.system.onSystemDidWakeUp(() => this.refreshAndRepaint());
     // Same recovery for a Stream Deck that reconnects — e.g. a dock the
     // device shares with the external monitors being unplugged and plugged
     // back in (issue #4). This fires no sleep/wake event, so without this
@@ -265,19 +298,29 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     // loop on its own, but re-enumerating here (and re-arming the fast poll
     // when dials are already visible) covers the monitor re-enumeration
     // tail the same way the wake path does.
-    streamDeck.devices.onDeviceDidConnect(() => {
-      loadDisplays();
-      updateAllFeedback(this);
-      if (visibleInstances > 0) {
-        this.scheduleRefresh();
-      }
-    });
+    streamDeck.devices.onDeviceDidConnect(() => this.refreshAndRepaint());
   }
 
   /** Public hook used by plugin.ts after global-settings updates. */
   refreshAllVisible(): void {
-    loadDisplays();
-    updateAllFeedback(this);
+    void refreshDisplays()
+      .then(() => updateAllFeedback(this))
+      .catch((e) => streamDeck.logger.error('Repaint failed', e));
+  }
+
+  /**
+   * Re-enumerate, repaint every dial, and re-arm the poll at the cadence
+   * the fresh list calls for. Shared by the wake and reconnect paths.
+   */
+  private refreshAndRepaint(): void {
+    void refreshDisplays()
+      .then(() => {
+        updateAllFeedback(this);
+        if (visibleInstances > 0) {
+          this.scheduleRefresh();
+        }
+      })
+      .catch((e) => streamDeck.logger.error('Repaint failed', e));
   }
 
   private handlePIMessage(payload: unknown): void {
@@ -313,7 +356,9 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
    * Self-rearming refresh loop. Each tick refreshes the displays cache,
    * repaints every visible dial, then schedules the next tick — at the
    * fast cadence while any bound display is missing (post-wake recovery)
-   * or the normal cadence otherwise.
+   * or the normal cadence otherwise. The next tick is only armed once the
+   * refresh has finished, so a slow enumeration never piles up behind
+   * itself.
    */
   private scheduleRefresh(): void {
     if (refreshTimer) {
@@ -323,13 +368,16 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
       ? RECONNECT_POLL_MS
       : REFRESH_INTERVAL_MS;
     refreshTimer = setTimeout(() => {
-      loadDisplays();
-      updateAllFeedback(this);
-      if (visibleInstances > 0) {
-        this.scheduleRefresh();
-      } else {
-        refreshTimer = undefined;
-      }
+      void refreshDisplays()
+        .then(() => updateAllFeedback(this))
+        .catch((e) => streamDeck.logger.error('Display poll failed', e))
+        .finally(() => {
+          if (visibleInstances > 0) {
+            this.scheduleRefresh();
+          } else {
+            refreshTimer = undefined;
+          }
+        });
     }, delay);
   }
 
@@ -343,8 +391,13 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     if (ev.payload.settings.displayKey) {
       displayKeyByAction.set(ev.action.id, ev.payload.settings.displayKey);
     }
-    loadDisplays();
+    // Paint from the cache right away (instant when another dial already
+    // loaded it), then again once a fresh enumeration lands. Several dials
+    // appearing together share one enumeration.
     updateAllFeedback(this);
+    void refreshDisplays()
+      .then(() => updateAllFeedback(this))
+      .catch((e) => streamDeck.logger.error('Repaint failed', e));
 
     visibleInstances++;
     if (!refreshTimer) {
@@ -390,9 +443,9 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     // post-sleep). Otherwise display.index / ddcIndex may not match
     // what macOS currently expects, and the helper would adjust the
     // wrong monitor.
-    ensureFreshDisplays();
+    await ensureFreshDisplays();
     if (displays.length === 0) {
-      loadDisplays();
+      await refreshDisplays();
     }
     if (displays.length === 0) {
       updateFeedbackForAction(ev.action);
@@ -421,7 +474,7 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     const nextDisplay = displays[nextIdx];
     displayKeyByAction.set(ev.action.id, nextDisplay.stableKey);
 
-    refreshBrightness(nextDisplay);
+    await refreshBrightness(nextDisplay);
     highlightDisplay(nextDisplay);
     updateFeedbackForAction(ev.action);
 
@@ -432,10 +485,13 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
     });
   }
 
-  override onDialRotate(ev: DialRotateEvent<BrightnessSettings>): void {
+  override async onDialRotate(
+    ev: DialRotateEvent<BrightnessSettings>
+  ): Promise<void> {
     // Same staleness check as onDialDown — the first rotate after a
-    // sleep/wake must operate on a fresh helper roundtrip.
-    ensureFreshDisplays();
+    // sleep/wake must operate on a fresh helper roundtrip. Ticks arriving
+    // while that refresh runs wait on the same one and apply in order.
+    await ensureFreshDisplays();
     const key = ensureCurrentKey(ev.action.id);
     const display = findDisplay(key);
     if (!display) {

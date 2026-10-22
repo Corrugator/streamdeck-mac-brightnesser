@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'child_process';
+import { execFile } from 'child_process';
 import { accessSync, chmodSync, constants } from 'fs';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -23,6 +23,20 @@ const M1DDC_CANDIDATE_PATHS = [
   '/opt/homebrew/bin/m1ddc', // Apple Silicon Homebrew
   '/usr/local/bin/m1ddc',    // Intel Homebrew
 ];
+
+// Every helper / m1ddc call runs asynchronously. The old synchronous calls
+// blocked the event loop for up to 5 s each; a DDC monitor slow to answer
+// (e.g. right after a dock replug) stacked several of them, Stream Deck
+// stopped getting heartbeat replies, killed the plugin as unresponsive and
+// after three strikes disabled it (issue #4).
+const COMMAND_TIMEOUT_MS = 5000;
+// DDC luminance reads: a monitor that doesn't answer quickly is reported
+// with unknown brightness instead of holding up the whole display list.
+const DDC_READ_TIMEOUT_MS = 2500;
+// A child stuck in the kernel (mid DDC transaction) may not exit even on
+// SIGKILL, and execFile only calls back once it does. Stop waiting this
+// long after the kill so one wedged process can't stall refreshes forever.
+const KILL_GRACE_MS = 1000;
 
 // ===== User-Custom Display Names =====
 // Map<stableKey, customName>. Populated from globalSettings.displayNames by
@@ -91,28 +105,35 @@ function getHelperPath(): string {
   return path;
 }
 
-function runFile(bin: string, args: string[]): string {
-  try {
-    return execFileSync(bin, args, { encoding: 'utf-8', timeout: 5000 }).trim();
-  } catch (e) {
-    logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
-    return '';
-  }
-}
-
 async function runFileAsync(
   bin: string,
-  args: string[]
+  args: string[],
+  timeoutMs: number = COMMAND_TIMEOUT_MS
 ): Promise<{ ok: boolean; output: string }> {
+  // Log basename only — the helper's full path would leak the home dir.
+  const label = `${basename(bin)} ${args.join(' ')}`;
+  const run = execFileAsync(bin, args, {
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  }).then(
+    ({ stdout }) => ({ ok: true, output: stdout.trim() }),
+    (e) => {
+      logger.error(`Command failed: ${label}`, e);
+      return { ok: false, output: '' };
+    }
+  );
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const gaveUp = new Promise<{ ok: boolean; output: string }>((resolve) => {
+    deadline = setTimeout(() => {
+      logger.error(`Gave up waiting for: ${label}`);
+      resolve({ ok: false, output: '' });
+    }, timeoutMs + KILL_GRACE_MS);
+  });
   try {
-    const { stdout } = await execFileAsync(bin, args, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    return { ok: true, output: stdout.trim() };
-  } catch (e) {
-    logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
-    return { ok: false, output: '' };
+    return await Promise.race([run, gaveUp]);
+  } finally {
+    clearTimeout(deadline);
   }
 }
 
@@ -135,13 +156,13 @@ function getM1ddcPath(): string | null {
   return null;
 }
 
-function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }> {
+async function getDDCDisplays(): Promise<Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }>> {
   const result = new Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }>();
 
   const m1ddcPath = getM1ddcPath();
   if (!m1ddcPath) return result;
 
-  const output = runFile(m1ddcPath, ['display', 'list']);
+  const { output } = await runFileAsync(m1ddcPath, ['display', 'list']);
   if (!output) return result;
 
   for (const line of output.split('\n')) {
@@ -154,7 +175,11 @@ function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightn
     const uuid = match[3];
     if (name === '(null)') continue;
 
-    const brOutput = runFile(m1ddcPath, ['display', String(ddcIndex), 'get', 'luminance']);
+    const { output: brOutput } = await runFileAsync(
+      m1ddcPath,
+      ['display', String(ddcIndex), 'get', 'luminance'],
+      DDC_READ_TIMEOUT_MS
+    );
     const rawBr = parseInt(brOutput, 10);
     const brightness = (!isNaN(rawBr) && rawBr >= 0 && rawBr <= 100) ? rawBr : -1;
 
@@ -164,9 +189,9 @@ function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightn
   return result;
 }
 
-export function getDisplays(): Display[] {
+export async function getDisplays(): Promise<Display[]> {
   const helper = getHelperPath();
-  const output = runFile(helper, ['list']);
+  const { output } = await runFileAsync(helper, ['list']);
   if (!output) {
     logger.warn('No output from brightness-helper list');
     return [];
@@ -224,7 +249,7 @@ export function getDisplays(): Display[] {
   }
 
   if (dsUnsupportedIndices.length > 0 && getM1ddcPath()) {
-    const ddcDisplays = getDDCDisplays();
+    const ddcDisplays = await getDDCDisplays();
 
     // DS displays may carry a "N" suffix for duplicates (added by Swift),
     // while m1ddc returns the raw name. Compare base names, and skip as many
@@ -413,10 +438,10 @@ export function highlightDisplay(display: Display, durationSeconds: number = 2):
   logger.trace(`Highlight: "${display.name}" cgDisplayID=${display.cgDisplayID} duration=${dur}s`);
 }
 
-export function refreshBrightness(display: Display): number {
+export async function refreshBrightness(display: Display): Promise<number> {
   if (display.method === 'ds') {
     const helper = getHelperPath();
-    const output = runFile(helper, ['get', String(display.index)]);
+    const { output } = await runFileAsync(helper, ['get', String(display.index)]);
     const val = parseInt(output, 10);
     if (!isNaN(val) && val >= 0 && val <= 100) {
       display.brightness = val;
@@ -424,7 +449,11 @@ export function refreshBrightness(display: Display): number {
   } else if (display.method === 'ddc') {
     const m1ddcPath = getM1ddcPath();
     if (!m1ddcPath) return display.brightness;
-    const output = runFile(m1ddcPath, ['display', String(display.ddcIndex), 'get', 'luminance']);
+    const { output } = await runFileAsync(
+      m1ddcPath,
+      ['display', String(display.ddcIndex), 'get', 'luminance'],
+      DDC_READ_TIMEOUT_MS
+    );
     const val = parseInt(output, 10);
     if (!isNaN(val) && val >= 0 && val <= 100) {
       display.brightness = val;
