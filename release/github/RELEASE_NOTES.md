@@ -1,89 +1,91 @@
-# Brightness Control v1.1.0-rc.4 — Fix lost bindings after sleep/wake (Release Candidate)
+# Brightness Control v1.2.1-rc.2 — Plugin no longer stalls on slow monitors (Release Candidate)
 
-> ⚠️ **Pre-release.** Bug-fix iteration on v1.1.0 based on testing
-> feedback from [Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).
+> ⚠️ **Pre-release.** Second release candidate for v1.2.1, based on
+> [Issue #4](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/4).
 
-Thanks again to [@Greenysmac](https://github.com/Greenysmac) for the
-video repro of the rc.3 wake bug — exactly what was needed to pin
-this down.
-
----
-
-## What changed since v1.1.0-rc.3
-
-### Dial bindings survive sleep/wake (no more "everything says MacBook")
-
-**Symptom (rc.3):** After wake, all dials showed "MacBook Display"
-and stayed that way until you opened the PI and changed anything —
-only then did the correct assignments come back.
-
-**Root cause:** When macOS wakes, external monitors take a few
-seconds to re-enumerate — during that window the OS reports only the
-built-in display. If the plugin's refresh timer fired inside that
-window, the displays cache contained just one entry, and the
-binding-resolution helper **overwrote** each dial's binding with the
-first available display (the MacBook). The correct binding only
-survived in the persisted settings, which are re-read when the PI
-saves something — hence "clicking inside and doing anything restores
-the state."
-
-**Fix (three layers):**
-
-1. **Bindings are never overwritten.** A dial bound to a display
-   keeps that binding even while the display is temporarily absent.
-   The LCD shows the custom display name (if set) with a
-   `Reconnecting…` hint instead of silently switching to the wrong
-   monitor. Rotating in that state does nothing (no more brightness
-   commands going to the wrong screen).
-2. **Instant wake refresh.** The plugin now listens for macOS's
-   wake notification (`systemDidWakeUp`) and refreshes immediately,
-   instead of waiting for the next poll tick.
-3. **Adaptive fast poll.** While any bound display is missing, the
-   plugin polls every **2 seconds** (instead of the normal 10) until
-   everything is back, then drops back to the normal cadence. The
-   recovery is fully automatic — no PI interaction needed.
-
-**Expected behavior after this fix:** Wake the Mac → dials briefly
-show `Reconnecting…` while macOS re-attaches the external monitors
-(typically 2–5 s, hardware-dependent) → everything snaps back to the
-correct displays automatically. If you rotate a dial during the
-reconnect window, nothing happens (better than adjusting the wrong
-screen); a second later the dial is live again.
+Thanks to [@daspader](https://github.com/daspader) for sending the
+Stream Deck log at the right moment. It showed what rc.1 had missed.
 
 ---
 
-## Unchanged from rc.3
+## What changed since v1.2.1-rc.1
 
-- Stale-index protection on every dial interaction (the rc.2 fix)
-- Per-dial display assignment, Cycle mode, locked-mode press options
-- Identify button in PI, custom display names, per-dial colors
+### The plugin stays responsive while it reads the connected monitors
+
+**Symptom (rc.1 and earlier):** Some time after a dock swap, turning the
+brightness dial only made it flash red. Other actions on the Stream Deck
+kept working. Only restarting the Stream Deck app, or unplugging the
+Stream Deck, brought the dial back.
+
+**Root cause:** To find the connected monitors, the plugin asks the
+bundled helper and, for third-party monitors, `m1ddc`. Those calls were
+synchronous: while one ran, the plugin could do nothing else, for up to
+5 seconds per call. A monitor that is slow to answer over DDC/CI, as
+often happens right after a dock replug, stacked several of them. The
+Stream Deck app then got no reply from the plugin for over 10 seconds,
+treated it as hung and restarted it. The restarted plugin ran into the
+same wait, and after three attempts the Stream Deck app **disabled** it.
+The red flash was the Stream Deck app reporting the disabled plugin.
+
+rc.1's reconnect handler was a real gap, but it didn't touch this. It
+only added one more of those waits at the moment a dock comes back.
+
+**Fix:**
+
+1. **No more blocking.** All monitor queries now run in the background.
+   A slow monitor still takes as long as it takes, but the plugin keeps
+   answering the Stream Deck app the whole time.
+2. **Bounded waits.** A query that doesn't finish in time is cancelled,
+   and the plugin stops waiting even if the process refuses to exit.
+   Brightness reads from DDC/CI monitors give up after 2.5 s instead of 5 s.
+3. **One lookup at a time.** Several dials starting together, the regular
+   poll, wake and reconnect now share one monitor lookup instead of each
+   starting their own.
+
+The sleep/wake protection from v1.1.0 is unchanged: after wake, the first
+turn of a dial still waits for a fresh monitor list, so it never adjusts
+the wrong screen.
+
+---
+
+## Unchanged from v1.2.1-rc.1
+
+- Recovery when the Stream Deck reconnects (dock swaps)
+- Brightness Preset keypad buttons
+- Per-dial display assignment, Cycle / Locked modes, per-dial defaults
 
 ## Install
 
-> ⚠️ Installing this RC **replaces v1.0.0** since the plugin UUID is
-> identical.
+> ⚠️ Installing this RC **replaces** any previous v1.x install, since the
+> plugin UUID is identical.
 
 1. Download `com.corrugator.brightness.streamDeckPlugin` from the
    assets below.
-2. Double-click. Stream Deck app installs it, overwriting any
-   previous v1.x install.
-3. Existing dial assignments and settings are preserved.
+2. Double-click. The Stream Deck app installs it over the previous
+   version.
+3. Existing dial assignments, presets and settings are preserved.
 
 ## Verifying the download
 
+The SHA-256 checksum is in `com.corrugator.brightness.streamDeckPlugin.sha256`
+next to the download:
+
 ```bash
-shasum -a 256 com.corrugator.brightness.streamDeckPlugin
-# 36a9d64eb75997bf9c00a0bccce9dab98a9e53e2391f388c5c9f225a934533a8
+shasum -a 256 -c com.corrugator.brightness.streamDeckPlugin.sha256
 ```
 
 ## Test focus for this RC
 
-- ✅ Sleep → wake → **don't touch anything** → do all dials return to
-  their correct displays within a few seconds, on their own?
-- ✅ Sleep → wake → rotate immediately during `Reconnecting…` → no
-  wrong-monitor adjustment, dial becomes live shortly after?
-- ✅ Unplug an external display while running → its dial shows
-  `Reconnecting…` → replug → dial recovers automatically?
+- ✅ Dock swaps over a few days: does the dial keep working, including
+  hours after the swap and the morning after?
+- ✅ Third-party (DDC/CI) monitors: does the dial still show and set the
+  right brightness?
+- ✅ Sleep → wake still recovers as before (no regression)?
 
-Anything off — drop a note in
-[Issue #1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1).
+**If it still fails:** in the dial's settings, turn on **Enable diagnostic
+logging**. When a monitor query times out, the plugin now writes which
+command hung into its log at
+`~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.corrugator.brightness.sdPlugin/logs/`.
+Please attach that log in
+[Issue #4](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/4).
+

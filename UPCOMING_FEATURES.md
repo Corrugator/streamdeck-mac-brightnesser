@@ -1,135 +1,98 @@
 # Upcoming Features
 
-Planned work, not yet implemented. Items here are scoped and ready to build —
-they're waiting on a gate (a release promotion, a dependency, a decision).
+Planned work, not yet implemented. Each item lists what it's waiting on
+(a test, a decision, a release) and links the issue where it's discussed.
 
 ---
 
-## Brightness Preset Buttons (Keypad action)
+## LCD style switch — match Elgato's dial look
 
-**Status:** Planned — blocked on promoting **v1.1.0** (per-dial displays) to stable.
-**Source:** [Issue #2 — "Feature request: Assign to buttons"](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/2) (Valentin Despa)
+**Status:** Lab build exists, not yet tested on hardware.
+**Source:** [Issue #3 — "Match styling of other plugins"](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/3) (danvpeterson)
 
-### What the user asked for
+A per-dial **LCD Style** setting: the current four-line layout stays the
+default, Elgato's built-in `$B1` layout (title, icon, value, bar) becomes
+an option. The built-in layouts have no hint line, so `Reconnecting…` and
+"No monitors found" take over the title while they apply, and the Cycle
+position and press hint aren't shown.
 
-Classic Stream Deck keypad buttons that act as brightness **presets**: one button
-sets a fixed value (e.g. 10 %), another sets a high value (e.g. 100 %), so you can
-flip between fixed brightness settings with a single press. Today the plugin only
-offers the **Encoder/Dial** action (rotate to adjust) — there is no fixed-value
-button.
+The lab build lives on the local branch `lab/lcd-style-switch`
+(`27adb4c`, 2026-07-26). It installs as a separate plugin
+(`com.corrugator.brightness.lab`) next to the real one; its test plan is
+`TESTING-LCD-STYLE.md` on that branch.
 
-### Scope (v1)
+**Next:** run the hardware test. The open question is whether the
+built-in layouts render with the item keys the build assumes (`title`,
+`icon`, `value`, `indicator`) — wrong keys fail silently as a blank LCD.
 
-> **One keypad button = (a specific monitor **or** "All displays") + a fixed
-> percentage. Pressing the button sets that value.**
+**Before it can ship:**
+- Port the changes in `brightness-dial.ts` and the PI onto the current
+  code. The branch itself isn't mergeable: it renames the plugin folder,
+  UUIDs and build paths, and predates the v1.2.1 fixes.
+- If `setFeedbackLayout` fails, the lab build marks the layout as applied
+  anyway and never retries, leaving the dial blank. Needs a retry or a
+  fallback to the default layout.
+- Its commit message carries a `Co-Authored-By` line; reword before the
+  branch is ever pushed.
 
-No toggle, no relative +/−, no live polling. Those can follow later if requested.
+---
 
-### Feasibility
+## Contrast control
 
-High, and cheap. All the heavy lifting already exists in
-[`src/actions/display-manager.ts`](src/actions/display-manager.ts) and is cleanly
-decoupled from the dial. A preset button only needs:
+**Status:** Requested, not started.
+**Source:** [Issue #6](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/6) (requested by daspader in #4)
 
-- `getDisplays()` → resolve display(s) by `stableKey`
-- an awaitable write that reports success → for `showOk` / `showAlert`
+Adjust monitor contrast alongside brightness.
 
-**No Swift/helper changes. No new m1ddc handling. No changes to the dial's
-sleep/wake logic** (the rc.3/rc.4 fixes stay untouched).
+- Only DDC/CI monitors can support it. `m1ddc` already reads and sets
+  `contrast` the same way the plugin uses `luminance`.
+- Apple displays and built-in panels (DisplayServices) have no contrast
+  control; for them the option should be hidden or shown as unavailable.
+- **Decision needed:** a separate Contrast dial action, or a mode on the
+  existing dial. A separate action is simpler and leaves the brightness
+  dial's behavior untouched.
 
-> **⚠️ Changed since this doc was first written (rc.5 work):** `setBrightness()`
-> is now **fire-and-forget and coalesced** (optimistic update + async write,
-> keyed by `stableKey`) — it returns `void`, so a preset button can no longer
-> learn from it whether the write succeeded. That coalescing exists to absorb
-> rapid *dial* ticks; a single keypad press doesn't need it. So the preset must
-> use a direct, awaitable write instead (see step 0 below).
+---
 
-### Approach: a separate action, not an extension of the dial
+## Identify for DDC/CI monitors
 
-A button (press = set fixed value) behaves fundamentally differently from the dial
-(rotate = relative change). Cleaner and lower-risk to add a **new action**
-`com.corrugator.brightness.preset` with `Controllers: ["Keypad"]`, leaving
-[`brightness-dial.ts`](src/actions/brightness-dial.ts) — and its freshly-fixed
-sleep/wake handling — alone.
+**Status:** Not started, cause understood.
+**Source:** [Issue #7](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/7) (split out of #1, Greenysmac)
 
-### Implementation plan
+**Identify** and the red outline need a monitor's CoreGraphics display ID.
+The helper reports that ID for every online display, DDC ones included,
+but `getDisplays()` drops it for displays without DisplayServices support,
+and the m1ddc entries built afterwards never get one.
 
-0. **Export an awaitable write** in
-   [`display-manager.ts`](src/actions/display-manager.ts). The internal
-   `writeBrightness(display, clamped)` already does the real subprocess call;
-   make it return `Promise<boolean>` (true on success) and export a thin wrapper
-   `applyBrightnessNow(display, value): Promise<boolean>` that clamps, updates
-   `display.brightness` optimistically, and awaits one write. The dial's
-   coalescing path keeps calling `writeBrightness` internally — unchanged
-   behaviour. The preset uses `applyBrightnessNow` so it can report real
-   success/failure. (~10 lines, no change to the dial.)
+**Approach:** carry the ID over to the matching m1ddc entry. Matching by
+name breaks with two identical monitors; matching by UUID is robust if
+m1ddc's UUID equals `CGDisplayCreateUUIDFromDisplayID` for the display —
+check that first.
 
-1. **Manifest** — add a second action in
-   [`manifest.json`](com.corrugator.brightness.sdPlugin/manifest.json):
-   `UUID: com.corrugator.brightness.preset`, `Controllers: ["Keypad"]`, own icon,
-   `PropertyInspectorPath: ui/brightness-preset-pi.html`. (Bump SDK-version-safe;
-   keep the existing dial action intact.)
+---
 
-2. **New action** `src/actions/brightness-preset.ts`
-   - Settings: `displayKey` (a `stableKey`, or the special value `__all__`) +
-     `targetBrightness` (0–100) + optional title color.
-   - `onKeyDown`: pull `getDisplays()` fresh → resolve target(s) →
-     `await Promise.all(targets.map(d => applyBrightnessNow(d, targetBrightness)))`.
-     - `__all__`: every connected display.
-     - specific key: the one display matching `stableKey` (may be absent → empty).
-   - Feedback: `showOk()` if **at least one** write resolved `true`;
-     `showAlert()` if no target was reachable (asleep / cable out / m1ddc missing)
-     or every write failed.
-   - No polling timer — pulling fresh on every press is inherently robust against
-     the post-sleep index-shift problem (simpler than the dial).
-   - **Reuse the helper coalescing? No.** A press is a single discrete event;
-     `applyBrightnessNow` (direct await) is the right tool, not the dial's
-     fire-and-forget queue.
+## Known issues to fix
 
-3. **Register** the action — second `registerAction` in
-   [`plugin.ts`](src/plugin.ts).
+### Diagnostic logging only records errors
 
-4. **Property Inspector** `ui/brightness-preset-pi.html`
-   - **Own `getDisplays` handler — do NOT depend on the dial's display cache.**
-     The dial's `handlePIMessage` answers `getDisplays` from a module-level cache
-     that is only populated once a *dial* has appeared / polled. A user with only
-     preset buttons (no dial) would get an empty/stale list. So the preset action
-     registers its own `streamDeck.ui.onSendToPlugin` handler that calls
-     `getDisplays()` fresh and replies with the same `{ event: 'displays', ... }`
-     shape the existing PI already understands. (Custom display names come from
-     `getDisplayNames()`, same as the dial.)
-   - Display picker: top option **"All displays"** (modeled on the dial's
-     "Cycle through all displays"), separator, then individual monitors.
-   - Target brightness input: slider 0–100 + number field (kept in sync).
-   - Optional: render the target value as the button title.
+`plugin.ts` sets the SDK logger to `error`, and the `DisplayManager` scope
+inherits that level. With **Enable diagnostic logging** on, only
+`logger.error` calls reach the log file; every `trace`/`info`/`warn` line
+is dropped. Command failures and timeouts are logged as errors, so the
+most useful lines do get through. Fix: raise the scope's level while the
+toggle is on, and log the important trace lines at `info` or above (the
+file target's floor is `debug` outside debug mode).
 
-5. **Build / release** — `rollup` picks up the new action automatically; bump the
-   manifest version, repack `.sdPlugin`, ship in the next rc build.
+### Property Inspector names the wrong log folder
 
-### Notes / risks
+The help text under **Diagnostics** points to
+`~/Library/Logs/ElgatoStreamDeck/` (the Stream Deck app's own logs). The
+plugin writes to
+`~/Library/Application Support/com.elgato.StreamDeck/Plugins/com.corrugator.brightness.sdPlugin/logs/`.
 
-- **PI message cross-talk.** The dial registers a **global**
-  `streamDeck.ui.onSendToPlugin` listener in its constructor (not action-scoped),
-  so it receives `getDisplays` from *any* PI — including the preset's. If the
-  preset also adds a global listener, a single `getDisplays` triggers two replies
-  to the same PI. Use the **action-scoped** `override onSendToPlugin(ev)` on the
-  preset action (the SDK routes it only for that action), and consider migrating
-  the dial to the scoped override too. Harmless if missed (double render), but
-  worth doing cleanly.
-- **Dial action stays completely untouched** — sleep/wake fixes unaffected
-  (step 0 only refactors `writeBrightness`'s return type; the dial's coalesced
-  path is unchanged).
-- **DDC/CI monitors** work the same as on the dial (via m1ddc). Same known limit:
-  no Identify flash, but setting brightness works.
-- **"All displays" with mixed transports**: Apple (DisplayServices) and third-party
-  (DDC/CI) are handled in the same loop. DDC writes are ~50–150 ms slower per
-  monitor — noticeable with several DDC displays but harmless (no live feedback
-  needed).
-- **Partial availability after wake**: only the currently-attached displays are
-  set; still reports `showOk`. Consistent with the "pull fresh on every press"
-  strategy.
+---
 
-### Effort estimate
+## Shipped
 
-Small — roughly one new action file (~80 lines) plus a trimmed-down PI HTML. ~80 %
-of the logic already exists.
+- **Brightness Preset buttons** ([#2](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/2)) — v1.2.0
+- **Per-dial display assignment** ([#1](https://github.com/Corrugator/streamdeck-mac-brightnesser/issues/1)) — v1.1.0 RCs, stable in v1.2.0
