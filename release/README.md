@@ -1,39 +1,49 @@
-# Release v1.0.0 — Brightness Control
+# Release material
 
-Staging directory for the v1.0.0 release. Everything in here is
-release-frozen and ready to upload.
+Listing copy, artwork and notes for publishing Brightness Control. The
+plugin bundles in here are **historical** — current builds are attached
+to the [GitHub releases](https://github.com/Corrugator/streamdeck-mac-brightnesser/releases)
+and are not checked in.
 
 ## Structure
 
 ```
 release/
-├── elgato/                 # Elgato Marketplace submission package
-│   ├── com.corrugator.brightness.streamDeckPlugin   # The plugin
+├── elgato/                 # Elgato Marketplace submission package (written for v1.0.0)
+│   ├── com.corrugator.brightness.streamDeckPlugin   # v1.0.0 bundle as submitted
 │   ├── assets/             # Listing artwork
 │   ├── LISTING.md          # Copy-paste for the submission form
+│   ├── MARKETPLACE_DESCRIPTION.md
 │   └── SUBMISSION_GUIDE.md # Step-by-step submission
-└── github/                 # GitHub release package
-    ├── com.corrugator.brightness.streamDeckPlugin           # Release asset
-    ├── com.corrugator.brightness.streamDeckPlugin.sha256    # Integrity hash
-    ├── RELEASE_NOTES.md    # v1.0.0 changelog
-    └── PUBLISH_GUIDE.md    # gh release create workflow
+├── github/                 # GitHub release material
+│   ├── assets/             # Icons and gallery images (also used by the repo README)
+│   ├── com.corrugator.brightness.streamDeckPlugin(.sha256)  # v1.0.0 bundle
+│   ├── RELEASE_NOTES.md    # Notes of the most recent release
+│   └── PUBLISH_GUIDE.md    # How a release is built and published
+├── prerelease/             # v1.1.0 RC-phase bundle (1.1.0.0)
+├── test/                   # Early test bundle, separate UUID (0.1.0.0)
+└── drafts/                 # Icon drafts
 ```
 
-## Source of truth
+## How releases are made now
 
-- Plugin bundle: identical SHA-256 in `elgato/` and `github/`
-  (`0b635c824b2a1ab6eeed686264a9001c459fccd05e6fdd5f34e1f4ef3e023f87`)
-- Built from commit `523922e` (or later, as long as `npm run pack`
-  produces the same hash).
+Builds are produced by the release script, which builds, validates and
+packs the plugin into `deployment/Github/` (not checked in), writes the
+`.sha256`, tags and publishes. See [`github/PUBLISH_GUIDE.md`](github/PUBLISH_GUIDE.md).
 
-## Order of operations
+- **Release candidates** are tagged on the feature branch and published
+  as GitHub pre-releases. The latest stable release stays "Latest".
+- **Final releases** are tagged on `master` after the feature branch is
+  merged (v1.2.0 sits on the merge commit).
 
-1. Publish the **GitHub** release first — gives users a direct
-   download path and a permalink we can reference from the
-   Marketplace listing.
-2. Submit to **Elgato Marketplace** with the GitHub link included
-   in the listing description.
+## Elgato Marketplace
 
-This way the public download is live before Marketplace review
-starts and any Marketplace QA reviewers can verify the binary
-matches.
+The Marketplace has **v1.2** (published 2026-06-24), with its own
+"What's new" text for 1.2 entered directly in the submission form — it
+is not stored in `elgato/`.
+
+The **overview description** there is still the v1.0.0 copy from
+`elgato/` (press-to-cycle dials only, Stream Deck+ only, log folder
+`~/Library/Logs/ElgatoStreamDeck/`). It doesn't mention per-dial
+assignment or preset keys, and the log path is wrong. Update `elgato/`
+and the listing together with the next Marketplace submission.

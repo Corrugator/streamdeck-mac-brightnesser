@@ -49,14 +49,14 @@ export class BrightnessPreset extends SingletonAction<PresetSettings> {
    * list fresh so a setup with ONLY preset buttons (no dial ever shown)
    * still gets a populated picker.
    */
-  override onSendToPlugin(
+  override async onSendToPlugin(
     ev: SendToPluginEvent<PresetSettings, PresetSettings>
-  ): void {
+  ): Promise<void> {
     const msg = ev.payload as { event?: string };
     if (msg?.event !== 'getDisplays') return;
 
     const names = getDisplayNames();
-    const list = getDisplays().map((d) => ({
+    const list = (await getDisplays()).map((d) => ({
       key: d.stableKey,
       defaultName: d.defaultName,
       customName: names[d.stableKey] ?? '',
@@ -80,7 +80,7 @@ export class BrightnessPreset extends SingletonAction<PresetSettings> {
 
     // Pull fresh every press: robust against post-sleep index shifts and
     // plug/unplug without any cached state of our own.
-    const displays = getDisplays();
+    const displays = await getDisplays();
     let targets: Display[];
     if (displayKey === ALL_DISPLAYS) {
       targets = displays;

@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from 'child_process';
+import { execFile } from 'child_process';
 import { accessSync, chmodSync, constants } from 'fs';
 import { basename, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
@@ -23,6 +23,20 @@ const M1DDC_CANDIDATE_PATHS = [
   '/opt/homebrew/bin/m1ddc', // Apple Silicon Homebrew
   '/usr/local/bin/m1ddc',    // Intel Homebrew
 ];
+
+// Every helper / m1ddc call runs asynchronously. The old synchronous calls
+// blocked the event loop for up to 5 s each; a DDC monitor slow to answer
+// (e.g. right after a dock replug) stacked several of them, Stream Deck
+// stopped getting heartbeat replies, killed the plugin as unresponsive and
+// after three strikes disabled it (issue #4).
+const COMMAND_TIMEOUT_MS = 5000;
+// DDC luminance reads: a monitor that doesn't answer quickly is reported
+// with unknown brightness instead of holding up the whole display list.
+const DDC_READ_TIMEOUT_MS = 2500;
+// A child stuck in the kernel (mid DDC transaction) may not exit even on
+// SIGKILL, and execFile only calls back once it does. Stop waiting this
+// long after the kill so one wedged process can't stall refreshes forever.
+const KILL_GRACE_MS = 1000;
 
 // ===== User-Custom Display Names =====
 // Map<stableKey, customName>. Populated from globalSettings.displayNames by
@@ -91,28 +105,35 @@ function getHelperPath(): string {
   return path;
 }
 
-function runFile(bin: string, args: string[]): string {
-  try {
-    return execFileSync(bin, args, { encoding: 'utf-8', timeout: 5000 }).trim();
-  } catch (e) {
-    logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
-    return '';
-  }
-}
-
 async function runFileAsync(
   bin: string,
-  args: string[]
+  args: string[],
+  timeoutMs: number = COMMAND_TIMEOUT_MS
 ): Promise<{ ok: boolean; output: string }> {
+  // Log basename only — the helper's full path would leak the home dir.
+  const label = `${basename(bin)} ${args.join(' ')}`;
+  const run = execFileAsync(bin, args, {
+    encoding: 'utf-8',
+    timeout: timeoutMs,
+    killSignal: 'SIGKILL',
+  }).then(
+    ({ stdout }) => ({ ok: true, output: stdout.trim() }),
+    (e) => {
+      logger.error(`Command failed: ${label}`, e);
+      return { ok: false, output: '' };
+    }
+  );
+  let deadline: ReturnType<typeof setTimeout> | undefined;
+  const gaveUp = new Promise<{ ok: boolean; output: string }>((resolve) => {
+    deadline = setTimeout(() => {
+      logger.error(`Gave up waiting for: ${label}`);
+      resolve({ ok: false, output: '' });
+    }, timeoutMs + KILL_GRACE_MS);
+  });
   try {
-    const { stdout } = await execFileAsync(bin, args, {
-      encoding: 'utf-8',
-      timeout: 5000,
-    });
-    return { ok: true, output: stdout.trim() };
-  } catch (e) {
-    logger.error(`Command failed: ${bin} ${args.join(' ')}`, e);
-    return { ok: false, output: '' };
+    return await Promise.race([run, gaveUp]);
+  } finally {
+    clearTimeout(deadline);
   }
 }
 
@@ -135,13 +156,70 @@ function getM1ddcPath(): string | null {
   return null;
 }
 
-function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }> {
+// ===== m1ddc backoff =====
+// On some display setups m1ddc crashes on every call (it dereferences a
+// null IORegistry path for displays without a DDC entry, e.g. some Apple
+// panels or Sidecar). The plugin used to retry on every poll — every 2 s
+// while a DDC display was missing, which that crash guarantees — and macOS
+// wrote a crash report each time (issue #8). From the second failure in a
+// row, m1ddc is left alone for a growing interval. A change in the set of
+// non-DisplayServices displays, a wake or a Stream Deck reconnect ends the
+// pause early, since that's when DDC can actually have come back.
+const M1DDC_BACKOFF_BASE_MS = 10_000;
+const M1DDC_BACKOFF_MAX_MS = 5 * 60_000;
+let m1ddcFailures = 0;
+let m1ddcRetryAt = 0;
+// Identity of the displays that would be looked up over DDC on the last
+// enumeration; '' while there are none, so their return counts as a change.
+let ddcCandidatesSignature = '';
+
+function noteM1ddcResult(ok: boolean): void {
+  if (ok) {
+    m1ddcFailures = 0;
+    m1ddcRetryAt = 0;
+    return;
+  }
+  m1ddcFailures++;
+  // A single failure (a monitor still waking up after a dock swap) is
+  // retried on the next poll as before; only repeated failures back off.
+  if (m1ddcFailures < 2) return;
+  const delay = Math.min(
+    M1DDC_BACKOFF_BASE_MS * 2 ** (m1ddcFailures - 2),
+    M1DDC_BACKOFF_MAX_MS
+  );
+  m1ddcRetryAt = Date.now() + delay;
+  logger.error(
+    `m1ddc failed ${m1ddcFailures} times in a row; pausing DDC lookups for ${Math.round(delay / 1000)} s`
+  );
+}
+
+/** End an m1ddc pause early — call when the displays may have changed. */
+export function resetDdcBackoff(): void {
+  m1ddcFailures = 0;
+  m1ddcRetryAt = 0;
+}
+
+// Last brightness read or written per display (stableKey). A failed read
+// falls back to this instead of a made-up 50 %, which made the dial jump to
+// 50 % on every poll for monitors whose DDC reads fail (issue #4).
+const lastKnownBrightness = new Map<string, number>();
+
+function brightnessOrLastKnown(stableKey: string, read: number | undefined): number {
+  if (read !== undefined) {
+    lastKnownBrightness.set(stableKey, read);
+    return read;
+  }
+  return lastKnownBrightness.get(stableKey) ?? 50;
+}
+
+async function getDDCDisplays(): Promise<Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }>> {
   const result = new Map<number, { ddcIndex: number; name: string; brightness: number; uuid: string }>();
 
   const m1ddcPath = getM1ddcPath();
   if (!m1ddcPath) return result;
 
-  const output = runFile(m1ddcPath, ['display', 'list']);
+  const { ok, output } = await runFileAsync(m1ddcPath, ['display', 'list']);
+  noteM1ddcResult(ok);
   if (!output) return result;
 
   for (const line of output.split('\n')) {
@@ -154,7 +232,11 @@ function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightn
     const uuid = match[3];
     if (name === '(null)') continue;
 
-    const brOutput = runFile(m1ddcPath, ['display', String(ddcIndex), 'get', 'luminance']);
+    const { output: brOutput } = await runFileAsync(
+      m1ddcPath,
+      ['display', String(ddcIndex), 'get', 'luminance'],
+      DDC_READ_TIMEOUT_MS
+    );
     const rawBr = parseInt(brOutput, 10);
     const brightness = (!isNaN(rawBr) && rawBr >= 0 && rawBr <= 100) ? rawBr : -1;
 
@@ -164,16 +246,17 @@ function getDDCDisplays(): Map<number, { ddcIndex: number; name: string; brightn
   return result;
 }
 
-export function getDisplays(): Display[] {
+export async function getDisplays(): Promise<Display[]> {
   const helper = getHelperPath();
-  const output = runFile(helper, ['list']);
+  const { output } = await runFileAsync(helper, ['list']);
   if (!output) {
     logger.warn('No output from brightness-helper list');
     return [];
   }
 
   const displays: Display[] = [];
-  const dsUnsupportedIndices: number[] = [];
+  // Displays DisplayServices can't drive; m1ddc is only consulted for them.
+  const ddcCandidates: string[] = [];
   // For DS displays without a real EDID serial (serial===0, common on
   // built-in panels), disambiguate by enumeration order under the same
   // (vendor, model) pair so two identical units still get distinct keys.
@@ -212,19 +295,34 @@ export function getDisplays(): Display[] {
         name: resolved,
         defaultName,
         stableKey,
-        brightness: isNaN(brightness) ? 50 : brightness,
+        brightness: brightnessOrLastKnown(
+          stableKey,
+          isNaN(brightness) ? undefined : brightness
+        ),
         method: 'ds',
         cgDisplayID: isNaN(cgDisplayID) ? undefined : cgDisplayID,
       });
       logger.trace(`Display ${index}: "${defaultName}" → "${resolved}" brightness=${brightness}% [DisplayServices]`);
     } else {
-      dsUnsupportedIndices.push(index);
+      ddcCandidates.push(`${cgDisplayID}:${vendor}-${model}-${serial}`);
       logger.trace(`Display ${index}: "${defaultName}" – DisplayServices not supported, trying DDC`);
     }
   }
 
-  if (dsUnsupportedIndices.length > 0 && getM1ddcPath()) {
-    const ddcDisplays = getDDCDisplays();
+  if (ddcCandidates.length === 0) {
+    ddcCandidatesSignature = '';
+  } else if (getM1ddcPath()) {
+    const signature = ddcCandidates.sort().join(',');
+    if (signature !== ddcCandidatesSignature) {
+      ddcCandidatesSignature = signature;
+      resetDdcBackoff();
+    }
+    let ddcDisplays: Awaited<ReturnType<typeof getDDCDisplays>> = new Map();
+    if (Date.now() >= m1ddcRetryAt) {
+      ddcDisplays = await getDDCDisplays();
+    } else {
+      logger.trace('Skipping m1ddc while DDC lookups are paused');
+    }
 
     // DS displays may carry a "N" suffix for duplicates (added by Swift),
     // while m1ddc returns the raw name. Compare base names, and skip as many
@@ -245,8 +343,11 @@ export function getDisplays(): Display[] {
         continue;
       }
 
-      const brightness = ddc.brightness >= 0 ? ddc.brightness : 50;
       const stableKey = `ddc:${ddc.uuid}`;
+      const brightness = brightnessOrLastKnown(
+        stableKey,
+        ddc.brightness >= 0 ? ddc.brightness : undefined
+      );
       const resolved = resolveName(stableKey, ddc.name);
       displays.push({
         id: `ddc:${ddcIndex}`,
@@ -323,7 +424,10 @@ export async function applyBrightnessNow(
 ): Promise<boolean> {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   const ok = await writeBrightness(display, clamped);
-  if (ok) display.brightness = clamped;
+  if (ok) {
+    display.brightness = clamped;
+    lastKnownBrightness.set(display.stableKey, clamped);
+  }
   return ok;
 }
 
@@ -366,6 +470,7 @@ async function flushWrites(display: Display): Promise<void> {
 export function setBrightness(display: Display, value: number): void {
   const clamped = Math.max(0, Math.min(100, Math.round(value)));
   display.brightness = clamped;
+  lastKnownBrightness.set(display.stableKey, clamped);
 
   const existing = pendingByKey.get(display.stableKey);
   if (existing) {
@@ -413,21 +518,27 @@ export function highlightDisplay(display: Display, durationSeconds: number = 2):
   logger.trace(`Highlight: "${display.name}" cgDisplayID=${display.cgDisplayID} duration=${dur}s`);
 }
 
-export function refreshBrightness(display: Display): number {
+export async function refreshBrightness(display: Display): Promise<number> {
   if (display.method === 'ds') {
     const helper = getHelperPath();
-    const output = runFile(helper, ['get', String(display.index)]);
+    const { output } = await runFileAsync(helper, ['get', String(display.index)]);
     const val = parseInt(output, 10);
     if (!isNaN(val) && val >= 0 && val <= 100) {
       display.brightness = val;
+      lastKnownBrightness.set(display.stableKey, val);
     }
   } else if (display.method === 'ddc') {
     const m1ddcPath = getM1ddcPath();
     if (!m1ddcPath) return display.brightness;
-    const output = runFile(m1ddcPath, ['display', String(display.ddcIndex), 'get', 'luminance']);
+    const { output } = await runFileAsync(
+      m1ddcPath,
+      ['display', String(display.ddcIndex), 'get', 'luminance'],
+      DDC_READ_TIMEOUT_MS
+    );
     const val = parseInt(output, 10);
     if (!isNaN(val) && val >= 0 && val <= 100) {
       display.brightness = val;
+      lastKnownBrightness.set(display.stableKey, val);
     }
   }
   return display.brightness;
