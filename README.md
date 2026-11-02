@@ -78,7 +78,7 @@ The DisplayServices path uses the same private framework macOS itself uses for t
 - macOS 12 (Monterey) or newer
 - Stream Deck App 6.9 or newer
 - Stream Deck+ for the **Brightness** dial action; **Brightness Preset** works on any Stream Deck with keys
-- *Optional:* `brew install m1ddc` for non-Apple DDC/CI displays
+- *Optional:* `brew install m1ddc` for non-Apple DDC/CI displays. Use m1ddc 1.3 or newer (`brew upgrade m1ddc`): older versions crash while a Sidecar or AirPlay display is connected, and on some monitors fail to read the current brightness.
 
 ## Installation
 
