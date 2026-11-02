@@ -8240,12 +8240,60 @@ function getM1ddcPath() {
     m1ddcPathCache = null;
     return null;
 }
+// ===== m1ddc backoff =====
+// On some display setups m1ddc crashes on every call (it dereferences a
+// null IORegistry path for displays without a DDC entry, e.g. some Apple
+// panels or Sidecar). The plugin used to retry on every poll — every 2 s
+// while a DDC display was missing, which that crash guarantees — and macOS
+// wrote a crash report each time (issue #8). From the second failure in a
+// row, m1ddc is left alone for a growing interval. A change in the set of
+// non-DisplayServices displays, a wake or a Stream Deck reconnect ends the
+// pause early, since that's when DDC can actually have come back.
+const M1DDC_BACKOFF_BASE_MS = 10_000;
+const M1DDC_BACKOFF_MAX_MS = 5 * 60_000;
+let m1ddcFailures = 0;
+let m1ddcRetryAt = 0;
+// Identity of the displays that would be looked up over DDC on the last
+// enumeration; '' while there are none, so their return counts as a change.
+let ddcCandidatesSignature = '';
+function noteM1ddcResult(ok) {
+    if (ok) {
+        m1ddcFailures = 0;
+        m1ddcRetryAt = 0;
+        return;
+    }
+    m1ddcFailures++;
+    // A single failure (a monitor still waking up after a dock swap) is
+    // retried on the next poll as before; only repeated failures back off.
+    if (m1ddcFailures < 2)
+        return;
+    const delay = Math.min(M1DDC_BACKOFF_BASE_MS * 2 ** (m1ddcFailures - 2), M1DDC_BACKOFF_MAX_MS);
+    m1ddcRetryAt = Date.now() + delay;
+    logger.error(`m1ddc failed ${m1ddcFailures} times in a row; pausing DDC lookups for ${Math.round(delay / 1000)} s`);
+}
+/** End an m1ddc pause early — call when the displays may have changed. */
+function resetDdcBackoff() {
+    m1ddcFailures = 0;
+    m1ddcRetryAt = 0;
+}
+// Last brightness read or written per display (stableKey). A failed read
+// falls back to this instead of a made-up 50 %, which made the dial jump to
+// 50 % on every poll for monitors whose DDC reads fail (issue #4).
+const lastKnownBrightness = new Map();
+function brightnessOrLastKnown(stableKey, read) {
+    if (read !== undefined) {
+        lastKnownBrightness.set(stableKey, read);
+        return read;
+    }
+    return lastKnownBrightness.get(stableKey) ?? 50;
+}
 async function getDDCDisplays() {
     const result = new Map();
     const m1ddcPath = getM1ddcPath();
     if (!m1ddcPath)
         return result;
-    const { output } = await runFileAsync(m1ddcPath, ['display', 'list']);
+    const { ok, output } = await runFileAsync(m1ddcPath, ['display', 'list']);
+    noteM1ddcResult(ok);
     if (!output)
         return result;
     for (const line of output.split('\n')) {
@@ -8273,7 +8321,8 @@ async function getDisplays() {
         return [];
     }
     const displays = [];
-    const dsUnsupportedIndices = [];
+    // Displays DisplayServices can't drive; m1ddc is only consulted for them.
+    const ddcCandidates = [];
     // For DS displays without a real EDID serial (serial===0, common on
     // built-in panels), disambiguate by enumeration order under the same
     // (vendor, model) pair so two identical units still get distinct keys.
@@ -8310,19 +8359,33 @@ async function getDisplays() {
                 name: resolved,
                 defaultName,
                 stableKey,
-                brightness: isNaN(brightness) ? 50 : brightness,
+                brightness: brightnessOrLastKnown(stableKey, isNaN(brightness) ? undefined : brightness),
                 method: 'ds',
                 cgDisplayID: isNaN(cgDisplayID) ? undefined : cgDisplayID,
             });
             logger.trace(`Display ${index}: "${defaultName}" → "${resolved}" brightness=${brightness}% [DisplayServices]`);
         }
         else {
-            dsUnsupportedIndices.push(index);
+            ddcCandidates.push(`${cgDisplayID}:${vendor}-${model}-${serial}`);
             logger.trace(`Display ${index}: "${defaultName}" – DisplayServices not supported, trying DDC`);
         }
     }
-    if (dsUnsupportedIndices.length > 0 && getM1ddcPath()) {
-        const ddcDisplays = await getDDCDisplays();
+    if (ddcCandidates.length === 0) {
+        ddcCandidatesSignature = '';
+    }
+    else if (getM1ddcPath()) {
+        const signature = ddcCandidates.sort().join(',');
+        if (signature !== ddcCandidatesSignature) {
+            ddcCandidatesSignature = signature;
+            resetDdcBackoff();
+        }
+        let ddcDisplays = new Map();
+        if (Date.now() >= m1ddcRetryAt) {
+            ddcDisplays = await getDDCDisplays();
+        }
+        else {
+            logger.trace('Skipping m1ddc while DDC lookups are paused');
+        }
         // DS displays may carry a "N" suffix for duplicates (added by Swift),
         // while m1ddc returns the raw name. Compare base names, and skip as many
         // ddc entries per base name as we already have ds entries.
@@ -8340,8 +8403,8 @@ async function getDisplays() {
                 ddcSkippedByBase.set(base, alreadySkipped + 1);
                 continue;
             }
-            const brightness = ddc.brightness >= 0 ? ddc.brightness : 50;
             const stableKey = `ddc:${ddc.uuid}`;
+            const brightness = brightnessOrLastKnown(stableKey, ddc.brightness >= 0 ? ddc.brightness : undefined);
             const resolved = resolveName(stableKey, ddc.name);
             displays.push({
                 id: `ddc:${ddcIndex}`,
@@ -8413,8 +8476,10 @@ async function writeBrightness(display, clamped) {
 async function applyBrightnessNow(display, value) {
     const clamped = Math.max(0, Math.min(100, Math.round(value)));
     const ok = await writeBrightness(display, clamped);
-    if (ok)
+    if (ok) {
         display.brightness = clamped;
+        lastKnownBrightness.set(display.stableKey, clamped);
+    }
     return ok;
 }
 const pendingByKey = new Map();
@@ -8446,6 +8511,7 @@ async function flushWrites(display) {
 function setBrightness(display, value) {
     const clamped = Math.max(0, Math.min(100, Math.round(value)));
     display.brightness = clamped;
+    lastKnownBrightness.set(display.stableKey, clamped);
     const existing = pendingByKey.get(display.stableKey);
     if (existing) {
         existing.target = clamped;
@@ -8494,6 +8560,7 @@ async function refreshBrightness(display) {
         const val = parseInt(output, 10);
         if (!isNaN(val) && val >= 0 && val <= 100) {
             display.brightness = val;
+            lastKnownBrightness.set(display.stableKey, val);
         }
     }
     else if (display.method === 'ddc') {
@@ -8504,6 +8571,7 @@ async function refreshBrightness(display) {
         const val = parseInt(output, 10);
         if (!isNaN(val) && val >= 0 && val <= 100) {
             display.brightness = val;
+            lastKnownBrightness.set(display.stableKey, val);
         }
     }
     return display.brightness;
@@ -8766,8 +8834,10 @@ let BrightnessDial = (() => {
         /**
          * Re-enumerate, repaint every dial, and re-arm the poll at the cadence
          * the fresh list calls for. Shared by the wake and reconnect paths.
+         * Both can bring DDC monitors back, so a paused m1ddc gets a fresh try.
          */
         refreshAndRepaint() {
+            resetDdcBackoff();
             void refreshDisplays()
                 .then(() => {
                 updateAllFeedback(this);

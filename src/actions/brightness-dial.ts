@@ -15,6 +15,7 @@ import {
   highlightDisplay,
   openDisplaySettings,
   refreshBrightness,
+  resetDdcBackoff,
   setBrightness,
 } from './display-manager';
 
@@ -311,8 +312,10 @@ export class BrightnessDial extends SingletonAction<BrightnessSettings> {
   /**
    * Re-enumerate, repaint every dial, and re-arm the poll at the cadence
    * the fresh list calls for. Shared by the wake and reconnect paths.
+   * Both can bring DDC monitors back, so a paused m1ddc gets a fresh try.
    */
   private refreshAndRepaint(): void {
+    resetDdcBackoff();
     void refreshDisplays()
       .then(() => {
         updateAllFeedback(this);
